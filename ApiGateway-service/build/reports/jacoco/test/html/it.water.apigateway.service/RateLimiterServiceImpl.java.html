@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="it"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RateLimiterServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ApiGateway-service</a> &gt; <a href="index.source.html" class="el_package">it.water.apigateway.service</a> &gt; <span class="el_source">RateLimiterServiceImpl.java</span></div><h1>RateLimiterServiceImpl.java</h1><pre class="source lang-java linenums">package it.water.apigateway.service;
+
+import it.water.apigateway.api.RateLimiterApi;
+import it.water.apigateway.model.*;
+import it.water.core.interceptors.annotations.FrameworkComponent;
+import it.water.core.api.interceptors.OnActivate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Rate limiter service implementation supporting TOKEN_BUCKET, SLIDING_WINDOW, FIXED_WINDOW.
+ */
+@FrameworkComponent
+<span class="fc" id="L19">public class RateLimiterServiceImpl implements RateLimiterApi {</span>
+
+<span class="fc" id="L21">    private static final Logger log = LoggerFactory.getLogger(RateLimiterServiceImpl.class);</span>
+
+<span class="fc" id="L23">    private final Map&lt;String, RateLimitRule&gt; rules = new ConcurrentHashMap&lt;&gt;();</span>
+
+    // Token bucket state per key
+    private static class TokenBucket {
+        final AtomicLong tokens;
+        final AtomicLong lastRefill;
+        final int capacity;
+        final double refillRate; // tokens per ms
+
+<span class="fc" id="L32">        TokenBucket(int capacity, int maxRequests, int windowSeconds) {</span>
+<span class="fc" id="L33">            this.tokens = new AtomicLong(capacity);</span>
+<span class="fc" id="L34">            this.lastRefill = new AtomicLong(System.currentTimeMillis());</span>
+<span class="fc" id="L35">            this.capacity = capacity;</span>
+<span class="fc" id="L36">            this.refillRate = (double) maxRequests / (windowSeconds * 1000.0);</span>
+<span class="fc" id="L37">        }</span>
+
+        synchronized boolean tryConsume() {
+<span class="fc" id="L40">            long now = System.currentTimeMillis();</span>
+<span class="fc" id="L41">            long elapsed = now - lastRefill.get();</span>
+<span class="fc" id="L42">            long newTokens = (long) (elapsed * refillRate);</span>
+<span class="pc bpc" id="L43" title="1 of 2 branches missed.">            if (newTokens &gt; 0) {</span>
+<span class="nc" id="L44">                tokens.set(Math.min(capacity, tokens.get() + newTokens));</span>
+<span class="nc" id="L45">                lastRefill.set(now);</span>
+            }
+<span class="fc bfc" id="L47" title="All 2 branches covered.">            if (tokens.get() &gt; 0) {</span>
+<span class="fc" id="L48">                tokens.decrementAndGet();</span>
+<span class="fc" id="L49">                return true;</span>
+            }
+<span class="fc" id="L51">            return false;</span>
+        }
+
+        int remaining() {
+<span class="fc" id="L55">            return (int) Math.max(0, tokens.get());</span>
+        }
+
+        long resetAfterMs(int maxRequests, int windowSeconds) {
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">            if (tokens.get() &gt; 0) return 0;</span>
+<span class="fc" id="L60">            return (long) (1.0 / refillRate);</span>
+        }
+    }
+
+    // Sliding window: deque of timestamps per key
+<span class="fc" id="L65">    private final Map&lt;String, Deque&lt;Long&gt;&gt; slidingWindows = new ConcurrentHashMap&lt;&gt;();</span>
+    // Fixed window: counter + window start per key
+<span class="fc" id="L67">    private static class FixedWindowState {</span>
+<span class="fc" id="L68">        final AtomicInteger count = new AtomicInteger(0);</span>
+<span class="fc" id="L69">        final AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());</span>
+    }
+<span class="fc" id="L71">    private final Map&lt;String, FixedWindowState&gt; fixedWindows = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="fc" id="L72">    private final Map&lt;String, TokenBucket&gt; tokenBuckets = new ConcurrentHashMap&lt;&gt;();</span>
+
+    @OnActivate
+    public void activate() {
+<span class="fc" id="L76">        log.info(&quot;RateLimiterServiceImpl activated&quot;);</span>
+<span class="fc" id="L77">    }</span>
+
+    @Override
+    public RateLimitResult checkRateLimit(String key, GatewayRequest request) {
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (rules.isEmpty()) {</span>
+<span class="fc" id="L82">            return RateLimitResult.builder().allowed(true).remaining(Integer.MAX_VALUE).resetAfterMs(0).build();</span>
+        }
+        // Apply first matching rule
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        for (RateLimitRule rule : rules.values()) {</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">            if (!rule.isEnabled()) continue;</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">            if (matchesKey(key, rule)) {</span>
+<span class="fc" id="L88">                return applyRule(key, rule);</span>
+            }
+<span class="fc" id="L90">        }</span>
+<span class="fc" id="L91">        return RateLimitResult.builder().allowed(true).remaining(Integer.MAX_VALUE).resetAfterMs(0).build();</span>
+    }
+
+    @Override
+    public void configureLimit(String ruleId, RateLimitRule rule) {
+<span class="fc" id="L96">        log.info(&quot;Configuring rate limit rule: {}&quot;, ruleId);</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (rule == null) {</span>
+<span class="fc" id="L98">            rules.remove(ruleId);</span>
+        } else {
+<span class="fc" id="L100">            rules.put(ruleId, rule);</span>
+        }
+<span class="fc" id="L102">    }</span>
+
+    @Override
+    public RateLimitRule getRule(String ruleId) {
+<span class="fc" id="L106">        return rules.get(ruleId);</span>
+    }
+
+    @Override
+    public List&lt;RateLimitRule&gt; getAllRules() {
+<span class="fc" id="L111">        return new ArrayList&lt;&gt;(rules.values());</span>
+    }
+
+    private boolean matchesKey(String key, RateLimitRule rule) {
+<span class="pc bpc" id="L115" title="1 of 4 branches missed.">        if (rule.getKeyPattern() == null || rule.getKeyPattern().isEmpty()) return true;</span>
+<span class="fc" id="L116">        return key.matches(rule.getKeyPattern());</span>
+    }
+
+    private RateLimitResult applyRule(String key, RateLimitRule rule) {
+<span class="fc" id="L120">        String bucketKey = rule.getRuleId() + &quot;:&quot; + key;</span>
+<span class="fc bfc" id="L121" title="All 3 branches covered.">        return switch (rule.getAlgorithm()) {</span>
+<span class="fc" id="L122">            case TOKEN_BUCKET -&gt; checkTokenBucket(bucketKey, rule);</span>
+<span class="fc" id="L123">            case SLIDING_WINDOW -&gt; checkSlidingWindow(bucketKey, rule);</span>
+<span class="fc" id="L124">            case FIXED_WINDOW -&gt; checkFixedWindow(bucketKey, rule);</span>
+        };
+    }
+
+    private RateLimitResult checkTokenBucket(String key, RateLimitRule rule) {
+<span class="fc" id="L129">        TokenBucket bucket = tokenBuckets.computeIfAbsent(key,</span>
+<span class="pc bpc" id="L130" title="1 of 2 branches missed.">                k -&gt; new TokenBucket(rule.getBurstCapacity() &gt; 0 ? rule.getBurstCapacity() : rule.getMaxRequests(),</span>
+<span class="fc" id="L131">                        rule.getMaxRequests(), rule.getWindowSeconds()));</span>
+<span class="fc" id="L132">        boolean allowed = bucket.tryConsume();</span>
+<span class="fc" id="L133">        int remaining = bucket.remaining();</span>
+<span class="fc bfc" id="L134" title="All 2 branches covered.">        long resetAfterMs = allowed ? 0 : bucket.resetAfterMs(rule.getMaxRequests(), rule.getWindowSeconds());</span>
+<span class="fc" id="L135">        return RateLimitResult.builder()</span>
+<span class="fc" id="L136">                .allowed(allowed)</span>
+<span class="fc" id="L137">                .remaining(remaining)</span>
+<span class="fc" id="L138">                .resetAfterMs(resetAfterMs)</span>
+<span class="fc" id="L139">                .rule(rule)</span>
+<span class="fc" id="L140">                .build();</span>
+    }
+
+    private synchronized RateLimitResult checkSlidingWindow(String key, RateLimitRule rule) {
+<span class="fc" id="L144">        Deque&lt;Long&gt; timestamps = slidingWindows.computeIfAbsent(key, k -&gt; new ArrayDeque&lt;&gt;());</span>
+<span class="fc" id="L145">        long now = System.currentTimeMillis();</span>
+<span class="fc" id="L146">        long windowMs = rule.getWindowSeconds() * 1000L;</span>
+        // Remove old timestamps
+<span class="pc bpc" id="L148" title="1 of 4 branches missed.">        while (!timestamps.isEmpty() &amp;&amp; now - timestamps.peekFirst() &gt; windowMs) {</span>
+<span class="nc" id="L149">            timestamps.pollFirst();</span>
+        }
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        if (timestamps.size() &lt; rule.getMaxRequests()) {</span>
+<span class="fc" id="L152">            timestamps.addLast(now);</span>
+<span class="fc" id="L153">            return RateLimitResult.builder()</span>
+<span class="fc" id="L154">                    .allowed(true)</span>
+<span class="fc" id="L155">                    .remaining(rule.getMaxRequests() - timestamps.size())</span>
+<span class="fc" id="L156">                    .resetAfterMs(0)</span>
+<span class="fc" id="L157">                    .rule(rule)</span>
+<span class="fc" id="L158">                    .build();</span>
+        }
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">        long resetAfterMs = timestamps.isEmpty() ? 0 : windowMs - (now - timestamps.peekFirst());</span>
+<span class="fc" id="L161">        return RateLimitResult.builder()</span>
+<span class="fc" id="L162">                .allowed(false)</span>
+<span class="fc" id="L163">                .remaining(0)</span>
+<span class="fc" id="L164">                .resetAfterMs(Math.max(0, resetAfterMs))</span>
+<span class="fc" id="L165">                .rule(rule)</span>
+<span class="fc" id="L166">                .build();</span>
+    }
+
+    private RateLimitResult checkFixedWindow(String key, RateLimitRule rule) {
+<span class="fc" id="L170">        FixedWindowState state = fixedWindows.computeIfAbsent(key, k -&gt; new FixedWindowState());</span>
+<span class="fc" id="L171">        long now = System.currentTimeMillis();</span>
+<span class="fc" id="L172">        long windowMs = rule.getWindowSeconds() * 1000L;</span>
+<span class="fc" id="L173">        synchronized (state) {</span>
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">            if (now - state.windowStart.get() &gt; windowMs) {</span>
+<span class="nc" id="L175">                state.count.set(0);</span>
+<span class="nc" id="L176">                state.windowStart.set(now);</span>
+            }
+<span class="fc" id="L178">            int current = state.count.get();</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">            if (current &lt; rule.getMaxRequests()) {</span>
+<span class="fc" id="L180">                state.count.incrementAndGet();</span>
+<span class="fc" id="L181">                return RateLimitResult.builder()</span>
+<span class="fc" id="L182">                        .allowed(true)</span>
+<span class="fc" id="L183">                        .remaining(rule.getMaxRequests() - state.count.get())</span>
+<span class="fc" id="L184">                        .resetAfterMs(0)</span>
+<span class="fc" id="L185">                        .rule(rule)</span>
+<span class="fc" id="L186">                        .build();</span>
+            }
+<span class="fc" id="L188">            long resetAfterMs = windowMs - (now - state.windowStart.get());</span>
+<span class="fc" id="L189">            return RateLimitResult.builder()</span>
+<span class="fc" id="L190">                    .allowed(false)</span>
+<span class="fc" id="L191">                    .remaining(0)</span>
+<span class="fc" id="L192">                    .resetAfterMs(Math.max(0, resetAfterMs))</span>
+<span class="fc" id="L193">                    .rule(rule)</span>
+<span class="fc" id="L194">                    .build();</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

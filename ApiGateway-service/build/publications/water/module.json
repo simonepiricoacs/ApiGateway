@@ -1,0 +1,293 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "it.water.apigateway",
+    "module": "ApiGateway-service",
+    "version": "3.0.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "7.6.5"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "ApiGateway-service-3.0.0.jar",
+          "url": "ApiGateway-service-3.0.0.jar",
+          "size": 50558,
+          "sha512": "0403c61639d057facd0210ebf674cacd4a1d74529dfcc82aef031dcd64888286fc76d4157513d12257e73f8c96fdb2db818fc0a10c5620d67d6a83ae54baf9a5",
+          "sha256": "a48cc9f96aaa05e1c8d2e5a7032ab5350988e0205097c6de2acc8df6a21c7c2b",
+          "sha1": "7e8ef7ecbfe900ae903150197f7d2c2fbfd5b852",
+          "md5": "10afb62ac5cef1d962b38450edcfc2de"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "1.7.3"
+          }
+        },
+        {
+          "group": "org.atteo.classindex",
+          "module": "classindex",
+          "version": {
+            "requires": "3.13"
+          }
+        },
+        {
+          "group": "org.projectlombok",
+          "module": "lombok",
+          "version": {
+            "requires": "1.18.28"
+          }
+        },
+        {
+          "group": "it.water.repository.jpa",
+          "module": "JpaRepository-api",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "jakarta.transaction",
+          "module": "jakarta.transaction-api",
+          "version": {
+            "requires": "2.0.1"
+          }
+        },
+        {
+          "group": "jakarta.persistence",
+          "module": "jakarta.persistence-api",
+          "version": {
+            "requires": "3.1.0"
+          }
+        },
+        {
+          "group": "it.water.repository",
+          "module": "Repository-entity",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.repository",
+          "module": "Repository-persistence",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.repository",
+          "module": "Repository-service",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-validation",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "jakarta.validation",
+          "module": "jakarta.validation-api",
+          "version": {
+            "requires": "3.1.0"
+          }
+        },
+        {
+          "group": "org.hibernate",
+          "module": "hibernate-validator",
+          "version": {
+            "requires": "7.0.5.Final"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.jaxrs",
+          "module": "jackson-jaxrs-json-provider",
+          "version": {
+            "requires": "2.14.3"
+          }
+        },
+        {
+          "group": "org.bouncycastle",
+          "module": "bcmail-jdk15on",
+          "version": {
+            "requires": "1.69"
+          }
+        },
+        {
+          "group": "com.nimbusds",
+          "module": "nimbus-jose-jwt",
+          "version": {
+            "requires": "9.31"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-api",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-bundle",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-interceptors",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-model",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-permission",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-registry",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-security",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.core",
+          "module": "Core-service",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.service.rest",
+          "module": "Rest-api",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.service.rest",
+          "module": "Rest-security",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.service.rest",
+          "module": "Rest-service",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.service.rest",
+          "module": "Rest-jaxrs-api",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.service.rest",
+          "module": "Rest-persistence",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "io.swagger",
+          "module": "swagger-jaxrs",
+          "version": {
+            "requires": "1.6.8"
+          }
+        },
+        {
+          "group": "it.water.service.discovery",
+          "module": "ServiceDiscovery-api",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.service.discovery",
+          "module": "ServiceDiscovery-model",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.apigateway",
+          "module": "ApiGateway-api",
+          "version": {
+            "requires": "3.0.0"
+          }
+        },
+        {
+          "group": "it.water.apigateway",
+          "module": "ApiGateway-model",
+          "version": {
+            "requires": "3.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "ApiGateway-service-3.0.0.jar",
+          "url": "ApiGateway-service-3.0.0.jar",
+          "size": 50558,
+          "sha512": "0403c61639d057facd0210ebf674cacd4a1d74529dfcc82aef031dcd64888286fc76d4157513d12257e73f8c96fdb2db818fc0a10c5620d67d6a83ae54baf9a5",
+          "sha256": "a48cc9f96aaa05e1c8d2e5a7032ab5350988e0205097c6de2acc8df6a21c7c2b",
+          "sha1": "7e8ef7ecbfe900ae903150197f7d2c2fbfd5b852",
+          "md5": "10afb62ac5cef1d962b38450edcfc2de"
+        }
+      ]
+    }
+  ]
+}

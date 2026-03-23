@@ -1,0 +1,77 @@
+{
+    "schemaVersion": "1.0",
+    "artifactId": "it.water.apigateway:ApiGateway-service:3.0.0",
+    "moduleId": "it.water.apigateway",
+    "displayName": "API Gateway",
+    "description": "HTTP API Gateway with routing, load balancing, rate limiting, and circuit breaker for Water Framework microservices",
+    "properties": [
+        
+    ],
+    "pins": {
+        "output": [
+            {
+                "id": "it.water.integration.api-gateway",
+                "required": false,
+                "properties": [
+                    
+                ]
+            }
+        ],
+        "input": [
+            {
+                "id": "it.water.service-discovery",
+                "required": false,
+                "properties": [
+                    {
+                        "key": "service.name",
+                        "name": "Service Name",
+                        "required": true,
+                        "sensitive": false,
+                        "defaultValue": "",
+                        "description": "Logical service name"
+                    },
+                    {
+                        "key": "service.instance-id",
+                        "name": "Instance ID",
+                        "required": false,
+                        "sensitive": false,
+                        "defaultValue": "",
+                        "description": "Unique instance ID (auto UUID if empty)"
+                    },
+                    {
+                        "key": "service.endpoint",
+                        "name": "Service Endpoint",
+                        "required": true,
+                        "sensitive": false,
+                        "defaultValue": "",
+                        "description": "Service endpoint URL"
+                    },
+                    {
+                        "key": "service.protocol",
+                        "name": "Protocol",
+                        "required": false,
+                        "sensitive": false,
+                        "defaultValue": "HTTP",
+                        "description": "Communication protocol"
+                    },
+                    {
+                        "key": "service.health-check.endpoint",
+                        "name": "Health Check Path",
+                        "required": false,
+                        "sensitive": false,
+                        "defaultValue": "/actuator/health",
+                        "description": "Health check endpoint path"
+                    },
+                    {
+                        "key": "service.health-check.interval",
+                        "name": "Health Check Interval",
+                        "required": false,
+                        "sensitive": false,
+                        "defaultValue": "30",
+                        "description": "Health check interval in seconds"
+                    }
+                ]
+            }
+        ]
+    }
+}

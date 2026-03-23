@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="it"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RequestTransformerServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ApiGateway-service</a> &gt; <a href="index.source.html" class="el_package">it.water.apigateway.service</a> &gt; <span class="el_source">RequestTransformerServiceImpl.java</span></div><h1>RequestTransformerServiceImpl.java</h1><pre class="source lang-java linenums">package it.water.apigateway.service;
+
+import it.water.apigateway.api.RequestTransformerApi;
+import it.water.apigateway.model.*;
+import it.water.core.interceptors.annotations.FrameworkComponent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Request/Response transformer service implementation.
+ * Handles header manipulation, path rewriting, and filter application.
+ */
+@FrameworkComponent
+<span class="fc" id="L19">public class RequestTransformerServiceImpl implements RequestTransformerApi {</span>
+
+<span class="fc" id="L21">    private static final Logger log = LoggerFactory.getLogger(RequestTransformerServiceImpl.class);</span>
+
+    @Override
+    public GatewayRequest transformRequest(GatewayRequest request, Route route) {
+<span class="fc bfc" id="L25" title="All 4 branches covered.">        if (request == null || route == null) {</span>
+<span class="fc" id="L26">            return request;</span>
+        }
+<span class="fc" id="L28">        log.debug(&quot;Transforming request for route: {}&quot;, route.getRouteId());</span>
+<span class="fc" id="L29">        GatewayRequest transformed = GatewayRequest.builder()</span>
+<span class="fc" id="L30">                .requestId(request.getRequestId())</span>
+<span class="fc" id="L31">                .method(request.getMethod())</span>
+<span class="fc" id="L32">                .path(request.getPath())</span>
+<span class="fc" id="L33">                .queryString(request.getQueryString())</span>
+<span class="fc" id="L34">                .headers(new HashMap&lt;&gt;(request.getHeaders()))</span>
+<span class="fc" id="L35">                .body(request.getBody())</span>
+<span class="fc" id="L36">                .clientIp(request.getClientIp())</span>
+<span class="fc" id="L37">                .protocol(request.getProtocol())</span>
+<span class="fc" id="L38">                .timestamp(request.getTimestamp())</span>
+<span class="fc" id="L39">                .attributes(new HashMap&lt;&gt;(request.getAttributes()))</span>
+<span class="fc" id="L40">                .build();</span>
+
+<span class="fc" id="L42">        Map&lt;String, String&gt; filters = route.getFilters();</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        if (filters != null) {</span>
+<span class="fc" id="L44">            applyHeaderFilters(transformed, filters);</span>
+<span class="fc" id="L45">            applyQueryParamFilters(transformed, filters);</span>
+        }
+
+        // Strip prefix
+<span class="pc bpc" id="L49" title="1 of 4 branches missed.">        if (route.getRewritePath() != null &amp;&amp; !route.getRewritePath().isEmpty()) {</span>
+<span class="fc" id="L50">            transformed.setPath(rewritePath(request.getPath(), route.getPathPattern(), route.getRewritePath()));</span>
+        }
+
+<span class="fc" id="L53">        return transformed;</span>
+    }
+
+    @Override
+    public GatewayResponse transformResponse(GatewayResponse response, Route route) {
+<span class="fc bfc" id="L58" title="All 4 branches covered.">        if (response == null || route == null) {</span>
+<span class="fc" id="L59">            return response;</span>
+        }
+<span class="fc" id="L61">        log.debug(&quot;Transforming response for route: {}&quot;, route.getRouteId());</span>
+<span class="fc" id="L62">        Map&lt;String, String&gt; filters = route.getFilters();</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (filters == null) return response;</span>
+
+<span class="fc" id="L65">        GatewayResponse transformed = GatewayResponse.builder()</span>
+<span class="fc" id="L66">                .statusCode(response.getStatusCode())</span>
+<span class="fc" id="L67">                .headers(new HashMap&lt;&gt;(response.getHeaders()))</span>
+<span class="fc" id="L68">                .body(response.getBody())</span>
+<span class="fc" id="L69">                .latencyMs(response.getLatencyMs())</span>
+<span class="fc" id="L70">                .upstreamInstanceId(response.getUpstreamInstanceId())</span>
+<span class="fc" id="L71">                .metadata(new HashMap&lt;&gt;(response.getMetadata()))</span>
+<span class="fc" id="L72">                .build();</span>
+
+        // Remove response headers
+<span class="fc" id="L75">        String removeHeader = filters.get(&quot;removeResponseHeader&quot;);</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        if (removeHeader != null) {</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">            for (String h : removeHeader.split(&quot;,&quot;)) {</span>
+<span class="fc" id="L78">                transformed.getHeaders().remove(h.trim());</span>
+            }
+        }
+        // Add response headers
+<span class="fc" id="L82">        filters.entrySet().stream()</span>
+<span class="fc" id="L83">                .filter(e -&gt; e.getKey().startsWith(&quot;addResponseHeader.&quot;))</span>
+<span class="fc" id="L84">                .forEach(e -&gt; transformed.getHeaders().put(e.getKey().substring(&quot;addResponseHeader.&quot;.length()), e.getValue()));</span>
+
+<span class="fc" id="L86">        return transformed;</span>
+    }
+
+    private void applyHeaderFilters(GatewayRequest request, Map&lt;String, String&gt; filters) {
+        // Add headers: addHeader.&lt;name&gt;=&lt;value&gt;
+<span class="fc" id="L91">        filters.entrySet().stream()</span>
+<span class="fc" id="L92">                .filter(e -&gt; e.getKey().startsWith(&quot;addHeader.&quot;))</span>
+<span class="fc" id="L93">                .forEach(e -&gt; request.getHeaders().put(e.getKey().substring(&quot;addHeader.&quot;.length()), e.getValue()));</span>
+
+        // Remove headers: removeHeader=&lt;name1&gt;,&lt;name2&gt;
+<span class="fc" id="L96">        String removeHeader = filters.get(&quot;removeHeader&quot;);</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (removeHeader != null) {</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">            for (String h : removeHeader.split(&quot;,&quot;)) {</span>
+<span class="fc" id="L99">                request.getHeaders().remove(h.trim());</span>
+            }
+        }
+
+        // Modify headers: modifyHeader.&lt;name&gt;=&lt;value&gt;
+<span class="fc" id="L104">        filters.entrySet().stream()</span>
+<span class="fc" id="L105">                .filter(e -&gt; e.getKey().startsWith(&quot;modifyHeader.&quot;))</span>
+<span class="fc" id="L106">                .forEach(e -&gt; request.getHeaders().put(e.getKey().substring(&quot;modifyHeader.&quot;.length()), e.getValue()));</span>
+<span class="fc" id="L107">    }</span>
+
+    private void applyQueryParamFilters(GatewayRequest request, Map&lt;String, String&gt; filters) {
+<span class="fc" id="L110">        filters.entrySet().stream()</span>
+<span class="fc" id="L111">                .filter(e -&gt; e.getKey().startsWith(&quot;addParam.&quot;))</span>
+<span class="fc" id="L112">                .forEach(e -&gt; {</span>
+<span class="fc" id="L113">                    String paramName = e.getKey().substring(&quot;addParam.&quot;.length());</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">                    String current = request.getQueryString() != null ? request.getQueryString() : &quot;&quot;;</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">                    if (!current.isEmpty()) current += &quot;&amp;&quot;;</span>
+<span class="fc" id="L116">                    request.setQueryString(current + paramName + &quot;=&quot; + e.getValue());</span>
+<span class="fc" id="L117">                });</span>
+<span class="fc" id="L118">    }</span>
+
+    private String rewritePath(String originalPath, String pathPattern, String rewritePath) {
+        try {
+            // Convert path pattern to regex (replace {var} with capture groups)
+<span class="fc" id="L123">            String regexPattern = pathPattern.replace(&quot;**&quot;, &quot;(.*)&quot;).replaceAll(&quot;\\{[^}]+}&quot;, &quot;([^/]+)&quot;);</span>
+<span class="fc" id="L124">            Pattern p = Pattern.compile(regexPattern);</span>
+<span class="fc" id="L125">            Matcher m = p.matcher(originalPath);</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">            if (m.matches()) {</span>
+<span class="fc" id="L127">                String result = rewritePath;</span>
+<span class="fc bfc" id="L128" title="All 2 branches covered.">                for (int i = 1; i &lt;= m.groupCount(); i++) {</span>
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">                    result = result.replace(&quot;$&quot; + i, m.group(i) != null ? m.group(i) : &quot;&quot;);</span>
+                }
+<span class="fc" id="L131">                return result;</span>
+            }
+<span class="nc" id="L133">        } catch (Exception e) {</span>
+<span class="nc" id="L134">            log.warn(&quot;Path rewrite failed for pattern {} -&gt; {}: {}&quot;, pathPattern, rewritePath, e.getMessage());</span>
+<span class="fc" id="L135">        }</span>
+<span class="fc" id="L136">        return originalPath;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

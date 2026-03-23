@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="it"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GatewayRouterServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ApiGateway-service</a> &gt; <a href="index.source.html" class="el_package">it.water.apigateway.service</a> &gt; <span class="el_source">GatewayRouterServiceImpl.java</span></div><h1>GatewayRouterServiceImpl.java</h1><pre class="source lang-java linenums">package it.water.apigateway.service;
+
+import it.water.apigateway.api.*;
+import it.water.apigateway.model.*;
+import it.water.core.interceptors.annotations.FrameworkComponent;
+import it.water.core.interceptors.annotations.Inject;
+import it.water.core.api.interceptors.OnActivate;
+import it.water.service.discovery.model.ServiceRegistration;
+import lombok.Getter;
+import lombok.Setter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.regex.Pattern;
+
+/**
+ * Core gateway router service implementation.
+ * Routes incoming requests to upstream services via HTTP proxy.
+ */
+@FrameworkComponent
+<span class="fc" id="L30">public class GatewayRouterServiceImpl implements GatewayRouterApi {</span>
+
+<span class="fc" id="L32">    private static final Logger log = LoggerFactory.getLogger(GatewayRouterServiceImpl.class);</span>
+
+<span class="fc" id="L34">    private static final Set&lt;String&gt; HOP_BY_HOP_HEADERS = Set.of(</span>
+            &quot;connection&quot;, &quot;keep-alive&quot;, &quot;proxy-authenticate&quot;, &quot;proxy-authorization&quot;,
+            &quot;te&quot;, &quot;trailer&quot;, &quot;transfer-encoding&quot;, &quot;upgrade&quot;
+    );
+
+    @Inject
+<span class="nc" id="L40">    @Getter</span>
+<span class="fc" id="L41">    @Setter</span>
+    private LoadBalancerApi loadBalancerApi;
+
+    @Inject
+<span class="nc" id="L45">    @Getter</span>
+<span class="fc" id="L46">    @Setter</span>
+    private CircuitBreakerApi circuitBreakerApi;
+
+    @Inject
+<span class="nc" id="L50">    @Getter</span>
+<span class="fc" id="L51">    @Setter</span>
+    private RateLimiterApi rateLimiterApi;
+
+    @Inject
+<span class="nc" id="L55">    @Getter</span>
+<span class="fc" id="L56">    @Setter</span>
+    private GatewayAuthenticationApi gatewayAuthenticationApi;
+
+    @Inject
+<span class="nc" id="L60">    @Getter</span>
+<span class="fc" id="L61">    @Setter</span>
+    private RequestTransformerApi requestTransformerApi;
+
+    @Inject
+<span class="nc" id="L65">    @Getter</span>
+<span class="fc" id="L66">    @Setter</span>
+    private GatewaySystemApi gatewaySystemApi;
+
+    @Inject
+<span class="nc" id="L70">    @Getter</span>
+<span class="fc" id="L71">    @Setter</span>
+    private RouteRepository routeRepository;
+
+<span class="fc" id="L74">    private volatile List&lt;Route&gt; activeRoutes = new CopyOnWriteArrayList&lt;&gt;();</span>
+<span class="fc" id="L75">    private final ConcurrentHashMap&lt;String, Pattern&gt; routePatternCache = new ConcurrentHashMap&lt;&gt;();</span>
+    private HttpClient httpClient;
+
+    @OnActivate
+    public void activate() {
+<span class="fc" id="L80">        log.info(&quot;GatewayRouterServiceImpl activating...&quot;);</span>
+<span class="fc" id="L81">        this.httpClient = HttpClient.newBuilder()</span>
+<span class="fc" id="L82">                .connectTimeout(Duration.ofSeconds(10))</span>
+<span class="fc" id="L83">                .build();</span>
+<span class="fc" id="L84">        refreshRoutes();</span>
+<span class="fc" id="L85">        log.info(&quot;GatewayRouterServiceImpl activated with {} routes&quot;, activeRoutes.size());</span>
+<span class="fc" id="L86">    }</span>
+
+    @Override
+    public GatewayResponse route(GatewayRequest request) {
+<span class="fc" id="L90">        log.debug(&quot;Routing request: {} {}&quot;, request.getMethod(), request.getPath());</span>
+
+<span class="fc" id="L92">        RouteResult routeResult = resolveRoute(request);</span>
+<span class="pc bpc" id="L93" title="1 of 4 branches missed.">        if (routeResult == null || routeResult.getRoute() == null) {</span>
+<span class="fc" id="L94">            return buildErrorResponse(404, &quot;No route found for: &quot; + request.getPath());</span>
+        }
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">        if (routeResult.getSelectedInstance() == null) {</span>
+<span class="fc" id="L97">            return buildErrorResponse(503, &quot;No healthy instance available for service: &quot; + routeResult.getRoute().getTargetServiceName());</span>
+        }
+
+<span class="nc" id="L100">        Route route = routeResult.getRoute();</span>
+<span class="nc" id="L101">        ServiceRegistration instance = routeResult.getSelectedInstance();</span>
+
+        // Rate limit check
+<span class="nc bnc" id="L104" title="All 2 branches missed.">        String rateLimitKey = request.getClientIp() != null ? request.getClientIp() : &quot;global&quot;;</span>
+<span class="nc" id="L105">        RateLimitResult rateLimitResult = rateLimiterApi.checkRateLimit(rateLimitKey, request);</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">        if (!rateLimitResult.isAllowed()) {</span>
+<span class="nc" id="L107">            return buildErrorResponse(429, &quot;Rate limit exceeded. Retry after &quot; + rateLimitResult.getResetAfterMs() + &quot;ms&quot;);</span>
+        }
+
+        // Circuit breaker check
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        if (!circuitBreakerApi.allowRequest(route.getTargetServiceName(), instance.getInstanceId())) {</span>
+<span class="nc" id="L112">            return buildErrorResponse(503, &quot;Circuit breaker is OPEN for service: &quot; + route.getTargetServiceName());</span>
+        }
+
+        // Transform request
+<span class="nc bnc" id="L116" title="All 2 branches missed.">        GatewayRequest transformedRequest = requestTransformerApi.transformRequest(routeResult.getTransformedRequest() != null</span>
+<span class="nc" id="L117">                ? routeResult.getTransformedRequest() : request, route);</span>
+
+        // Proxy request
+<span class="nc" id="L120">        long startTime = System.currentTimeMillis();</span>
+        try {
+<span class="nc" id="L122">            GatewayResponse response = proxyRequest(transformedRequest, instance, route);</span>
+<span class="nc" id="L123">            long latency = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L124">            response.setLatencyMs(latency);</span>
+<span class="nc" id="L125">            response.setUpstreamInstanceId(instance.getInstanceId());</span>
+
+<span class="nc bnc" id="L127" title="All 2 branches missed.">            if (response.getStatusCode() &lt; 500) {</span>
+<span class="nc" id="L128">                circuitBreakerApi.recordSuccess(route.getTargetServiceName(), instance.getInstanceId());</span>
+<span class="nc" id="L129">                loadBalancerApi.reportSuccess(route.getTargetServiceName(), instance.getInstanceId(), latency);</span>
+            } else {
+<span class="nc" id="L131">                circuitBreakerApi.recordFailure(route.getTargetServiceName(), instance.getInstanceId());</span>
+<span class="nc" id="L132">                loadBalancerApi.reportFailure(route.getTargetServiceName(), instance.getInstanceId(), new RuntimeException(&quot;HTTP &quot; + response.getStatusCode()));</span>
+            }
+
+<span class="nc" id="L135">            return requestTransformerApi.transformResponse(response, route);</span>
+<span class="nc" id="L136">        } catch (Exception e) {</span>
+<span class="nc" id="L137">            long latency = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L138">            log.error(&quot;Proxy request failed for {}: {}&quot;, instance.getEndpoint(), e.getMessage());</span>
+<span class="nc" id="L139">            circuitBreakerApi.recordFailure(route.getTargetServiceName(), instance.getInstanceId());</span>
+<span class="nc" id="L140">            loadBalancerApi.reportFailure(route.getTargetServiceName(), instance.getInstanceId(), e);</span>
+<span class="nc" id="L141">            return buildErrorResponse(502, &quot;Bad Gateway: &quot; + e.getMessage());</span>
+        }
+    }
+
+    @Override
+    public RouteResult resolveRoute(GatewayRequest request) {
+<span class="fc" id="L147">        List&lt;Route&gt; routes = activeRoutes;</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        for (Route route : routes) {</span>
+<span class="fc bfc" id="L149" title="All 2 branches covered.">            if (!route.isEnabled()) continue;</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">            if (matchesRoute(request, route)) {</span>
+                // Get healthy instances
+<span class="fc" id="L152">                List&lt;ServiceRegistration&gt; instances = gatewaySystemApi.getHealthyInstances(route.getTargetServiceName());</span>
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">                if (instances.isEmpty()) {</span>
+                    // Try cache refresh
+<span class="fc" id="L155">                    gatewaySystemApi.syncWithServiceDiscovery();</span>
+<span class="fc" id="L156">                    instances = gatewaySystemApi.getHealthyInstances(route.getTargetServiceName());</span>
+                }
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">                ServiceRegistration instance = instances.isEmpty() ? null :</span>
+<span class="pc" id="L159">                        loadBalancerApi.selectInstance(route.getTargetServiceName(), request, instances);</span>
+
+<span class="fc" id="L161">                return RouteResult.builder()</span>
+<span class="fc" id="L162">                        .route(route)</span>
+<span class="fc" id="L163">                        .selectedInstance(instance)</span>
+<span class="fc" id="L164">                        .transformedRequest(request)</span>
+<span class="fc" id="L165">                        .build();</span>
+            }
+<span class="fc" id="L167">        }</span>
+<span class="fc" id="L168">        return null;</span>
+    }
+
+    @Override
+    public List&lt;Route&gt; getActiveRoutes() {
+<span class="fc" id="L173">        return Collections.unmodifiableList(activeRoutes);</span>
+    }
+
+    @Override
+    public void refreshRoutes() {
+<span class="fc" id="L178">        log.info(&quot;Refreshing routes from database&quot;);</span>
+        try {
+<span class="fc" id="L180">            List&lt;Route&gt; newRoutes = routeRepository.findOrderedByPriority();</span>
+<span class="fc" id="L181">            List&lt;Route&gt; sortedRoutes = newRoutes.stream()</span>
+<span class="pc" id="L182">                    .sorted((a, b) -&gt; Integer.compare(b.getPriority(), a.getPriority()))</span>
+<span class="fc" id="L183">                    .toList();</span>
+<span class="fc" id="L184">            activeRoutes = new CopyOnWriteArrayList&lt;&gt;(sortedRoutes);</span>
+<span class="fc" id="L185">            routePatternCache.clear();</span>
+            // Also sync service discovery
+<span class="pc bpc" id="L187" title="1 of 2 branches missed.">            if (gatewaySystemApi != null) {</span>
+<span class="fc" id="L188">                gatewaySystemApi.syncWithServiceDiscovery();</span>
+            }
+<span class="fc" id="L190">            log.info(&quot;Loaded {} routes&quot;, activeRoutes.size());</span>
+<span class="fc" id="L191">        } catch (Exception e) {</span>
+<span class="fc" id="L192">            log.warn(&quot;Failed to refresh routes: {}&quot;, e.getMessage());</span>
+<span class="fc" id="L193">        }</span>
+<span class="fc" id="L194">    }</span>
+
+    @Override
+    public void addDynamicRoute(Route route) {
+<span class="fc" id="L198">        log.info(&quot;Adding dynamic route: {}&quot;, route.getRouteId());</span>
+<span class="fc" id="L199">        List&lt;Route&gt; updated = new ArrayList&lt;&gt;(activeRoutes);</span>
+<span class="fc" id="L200">        updated.add(route);</span>
+<span class="fc" id="L201">        updated.sort((a, b) -&gt; Integer.compare(b.getPriority(), a.getPriority()));</span>
+<span class="fc" id="L202">        activeRoutes = new CopyOnWriteArrayList&lt;&gt;(updated);</span>
+<span class="fc" id="L203">        routePatternCache.remove(route.getPathPattern());</span>
+<span class="fc" id="L204">    }</span>
+
+    @Override
+    public void removeDynamicRoute(String routeId) {
+<span class="fc" id="L208">        log.info(&quot;Removing dynamic route: {}&quot;, routeId);</span>
+<span class="fc" id="L209">        List&lt;Route&gt; updated = new ArrayList&lt;&gt;(activeRoutes);</span>
+<span class="fc" id="L210">        updated.removeIf(r -&gt; routeId.equals(r.getRouteId()));</span>
+<span class="fc" id="L211">        activeRoutes = new CopyOnWriteArrayList&lt;&gt;(updated);</span>
+<span class="fc" id="L212">    }</span>
+
+    private boolean matchesRoute(GatewayRequest request, Route route) {
+        // Method check
+<span class="pc bpc" id="L216" title="1 of 4 branches missed.">        if (route.getMethod() != null &amp;&amp; route.getMethod() != HttpMethod.ANY) {</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">            if (request.getMethod() != route.getMethod()) return false;</span>
+        }
+        // Path pattern check
+<span class="fc" id="L220">        Pattern pattern = routePatternCache.computeIfAbsent(route.getPathPattern(), this::compilePattern);</span>
+<span class="fc" id="L221">        return pattern.matcher(request.getPath()).matches();</span>
+    }
+
+    private Pattern compilePattern(String pathPattern) {
+<span class="fc" id="L225">        String regex = pathPattern</span>
+<span class="fc" id="L226">                .replace(&quot;**&quot;, &quot;.*&quot;)</span>
+<span class="fc" id="L227">                .replaceAll(&quot;\\{[^}]+}&quot;, &quot;[^/]+&quot;);</span>
+<span class="pc bpc" id="L228" title="1 of 2 branches missed.">        if (!regex.startsWith(&quot;^&quot;)) regex = &quot;^&quot; + regex;</span>
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">        if (!regex.endsWith(&quot;$&quot;)) regex += &quot;(/.*)?$&quot;;</span>
+<span class="fc" id="L230">        return Pattern.compile(regex);</span>
+    }
+
+    private GatewayResponse proxyRequest(GatewayRequest request, ServiceRegistration instance, Route route) throws IOException, InterruptedException {
+<span class="nc" id="L234">        String targetUrl = buildTargetUrl(instance, request);</span>
+<span class="nc" id="L235">        log.debug(&quot;Proxying to: {}&quot;, targetUrl);</span>
+
+<span class="nc" id="L237">        HttpRequest.Builder builder = HttpRequest.newBuilder()</span>
+<span class="nc" id="L238">                .uri(URI.create(targetUrl))</span>
+<span class="nc" id="L239">                .timeout(Duration.ofSeconds(30));</span>
+
+        // Copy headers (excluding hop-by-hop)
+<span class="nc" id="L242">        request.getHeaders().forEach((name, value) -&gt; {</span>
+<span class="nc bnc" id="L243" title="All 2 branches missed.">            if (!HOP_BY_HOP_HEADERS.contains(name.toLowerCase())) {</span>
+                try {
+<span class="nc" id="L245">                    builder.header(name, value);</span>
+<span class="nc" id="L246">                } catch (Exception e) {</span>
+<span class="nc" id="L247">                    log.trace(&quot;Could not add header {}: {}&quot;, name, e.getMessage());</span>
+<span class="nc" id="L248">                }</span>
+            }
+<span class="nc" id="L250">        });</span>
+
+        // Add X-Forwarded headers
+<span class="nc bnc" id="L253" title="All 2 branches missed.">        builder.header(&quot;X-Forwarded-For&quot;, request.getClientIp() != null ? request.getClientIp() : &quot;unknown&quot;);</span>
+<span class="nc" id="L254">        builder.header(&quot;X-Request-ID&quot;, request.getRequestId());</span>
+
+        // Set method and body
+<span class="nc" id="L257">        byte[] body = request.getBody();</span>
+<span class="nc bnc" id="L258" title="All 4 branches missed.">        HttpRequest.BodyPublisher bodyPublisher = (body != null &amp;&amp; body.length &gt; 0)</span>
+<span class="nc" id="L259">                ? HttpRequest.BodyPublishers.ofByteArray(body)</span>
+<span class="nc" id="L260">                : HttpRequest.BodyPublishers.noBody();</span>
+
+<span class="nc bnc" id="L262" title="All 2 branches missed.">        String method = request.getMethod() != null ? request.getMethod().name() : &quot;GET&quot;;</span>
+<span class="nc bnc" id="L263" title="All 6 branches missed.">        if (&quot;GET&quot;.equals(method) || &quot;HEAD&quot;.equals(method) || &quot;OPTIONS&quot;.equals(method)) {</span>
+<span class="nc" id="L264">            bodyPublisher = HttpRequest.BodyPublishers.noBody();</span>
+        }
+<span class="nc" id="L266">        builder.method(method, bodyPublisher);</span>
+
+<span class="nc" id="L268">        HttpResponse&lt;byte[]&gt; response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());</span>
+
+<span class="nc" id="L270">        Map&lt;String, String&gt; responseHeaders = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L271">        response.headers().map().forEach((name, values) -&gt; {</span>
+<span class="nc bnc" id="L272" title="All 2 branches missed.">            if (!values.isEmpty()) responseHeaders.put(name, values.get(0));</span>
+<span class="nc" id="L273">        });</span>
+
+<span class="nc" id="L275">        return GatewayResponse.builder()</span>
+<span class="nc" id="L276">                .statusCode(response.statusCode())</span>
+<span class="nc" id="L277">                .headers(responseHeaders)</span>
+<span class="nc" id="L278">                .body(response.body())</span>
+<span class="nc" id="L279">                .build();</span>
+    }
+
+    private String buildTargetUrl(ServiceRegistration instance, GatewayRequest request) {
+<span class="nc" id="L283">        String endpoint = instance.getEndpoint();</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">        String path = request.getPath() != null ? request.getPath() : &quot;&quot;;</span>
+<span class="nc bnc" id="L285" title="All 4 branches missed.">        String query = request.getQueryString() != null &amp;&amp; !request.getQueryString().isEmpty()</span>
+<span class="nc" id="L286">                ? &quot;?&quot; + request.getQueryString() : &quot;&quot;;</span>
+<span class="nc bnc" id="L287" title="All 4 branches missed.">        if (endpoint.endsWith(&quot;/&quot;) &amp;&amp; path.startsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L288">            endpoint = endpoint.substring(0, endpoint.length() - 1);</span>
+        }
+<span class="nc" id="L290">        return endpoint + path + query;</span>
+    }
+
+    private GatewayResponse buildErrorResponse(int statusCode, String message) {
+<span class="fc" id="L294">        byte[] body = message.getBytes();</span>
+<span class="fc" id="L295">        return GatewayResponse.builder()</span>
+<span class="fc" id="L296">                .statusCode(statusCode)</span>
+<span class="fc" id="L297">                .body(body)</span>
+<span class="fc" id="L298">                .headers(Map.of(&quot;Content-Type&quot;, &quot;text/plain&quot;))</span>
+<span class="fc" id="L299">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

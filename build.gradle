@@ -1,0 +1,75 @@
+plugins {
+    id("org.sonarqube") version "5.1.0.4882"
+}
+
+allprojects {
+    project.ext.publishRepoName = "public-water-repository"
+    project.ext.publishRepoUrl = "https://nexus.acsoftware.it/nexus/repository/maven-water/"
+
+    project.ext.ApiGatewayVersion = project.waterVersion
+    group 'it.water.infrastructure.apigateway'
+    version project.ApiGatewayVersion
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+        maven {
+            url project.acsMavenRepository
+        }
+    }
+
+    apply plugin: 'java'
+    apply plugin: 'maven-publish'
+    apply plugin: 'jacoco'
+
+    publishing {
+        repositories {
+            maven {
+                name = project.publishRepoName
+                url = project.publishRepoUrl
+            }
+        }
+    }
+
+    test {
+        finalizedBy jacocoTestReport
+    }
+}
+
+sonarqube {
+    properties {
+        property "sonar.projectKey", "ApiGateway"
+        property "sonar.projectName", "ApiGateway"
+        property "sonar.projectVersion", project.waterVersion
+
+        property "sonar.sources", fileTree(dir: '.', include: '**/src/main/java').asPath
+        property "sonar.tests", fileTree(dir: '.', include: '**/src/test/java').asPath
+        property "sonar.java.binaries", fileTree(dir: '.', include: '**/build/classes').asPath
+        property "sonar.test.exclusions", fileTree(dir: '.', include: '**/src/test/java')
+
+        property "sonar.coverage.jacoco.xmlReportPaths", file("${buildDir}/reports/jacoco/jacocoRootReport.xml")
+
+        property "sonar.host.url", System.getProperty("sonar.host.url", "default")
+        property "sonar.login", System.getProperty("sonar.login", "default")
+    }
+}
+
+task jacocoRootReport(type: JacocoReport) {
+    dependsOn subprojects.test
+    additionalSourceDirs.setFrom(files(subprojects.sourceSets.main.allSource.srcDirs))
+    classDirectories.setFrom(
+            files(subprojects.collect { project ->
+                fileTree(dir: "${project.buildDir}/classes/java/main").exclude("**/src/test/java/**")
+            })
+    )
+    executionData.setFrom(fileTree(project.rootDir.absolutePath).include("**/build/jacoco/test.exec"))
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+        xml.destination file("${buildDir}/reports/jacoco/jacocoRootReport.xml")
+        html.destination file("${buildDir}/reports/jacoco/jacocoRootReport.html")
+    }
+}

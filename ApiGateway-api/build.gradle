@@ -1,0 +1,31 @@
+dependencies {
+    //SLF4J
+    implementation group: 'org.slf4j', name: 'slf4j-api', version: project.slf4jVersion
+    //Atteo
+    implementation 'org.atteo.classindex:classindex:' + project.atteoClassIndexVersion
+    annotationProcessor('org.atteo.classindex:classindex:' + project.atteoClassIndexVersion)
+    //Water Core dependencies
+    implementation group: "it.water.core", name: "Core-api", version: project.waterVersion
+    implementation group: "it.water.core", name: "Core-interceptors", version: project.waterVersion
+    implementation group: "it.water.core", name: "Core-model", version: project.waterVersion
+    implementation group: 'it.water.repository', name: 'Repository-entity', version: project.waterVersion
+    implementation project(":ApiGateway-model")
+    // ServiceDiscovery - needed for LoadBalancerApi (ServiceRegistration)
+    implementation group: 'it.water.service.discovery', name: 'ServiceDiscovery-model', version: project.waterVersion
+    //jakarta persistence
+    implementation group: 'jakarta.persistence', name: 'jakarta.persistence-api', version: project.jakartaPersistenceVersion
+    //Water jakarta persistence
+    implementation group: 'it.water.repository.jpa', name: 'JpaRepository-api', version: project.waterVersion
+    //Rest services
+    implementation group: "it.water.service.rest", name: "Rest-api", version: project.waterVersion
+    // https://mvnrepository.com/artifact/io.swagger/swagger-jaxrs
+    implementation group: 'io.swagger', name: 'swagger-jaxrs', version: project.swaggerJaxRsVersion
+}
+
+publishing {
+    publications {
+        water(MavenPublication) {
+            from components.java
+        }
+    }
+}

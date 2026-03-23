@@ -1,0 +1,484 @@
+# API Gateway Requirements Specification
+# Water Framework - Integration with ServiceDiscovery Module
+# Version: 1.0.0
+
+================================================================================
+                              OVERVIEW
+================================================================================
+
+The API Gateway module acts as a single entry point for all client requests,
+providing routing, load balancing, security, and observability features.
+It integrates with the ServiceDiscovery module to dynamically discover and
+route traffic to registered backend services.
+
+================================================================================
+                         MODULE STRUCTURE
+================================================================================
+
+ApiGateway/
+├── ApiGateway-api/                    # Interfaces and contracts
+├── ApiGateway-model/                  # Domain models (Route, RateLimitRule, etc.)
+├── ApiGateway-service/                # Core implementation
+├── ApiGateway-service-spring/         # Spring-specific implementation
+└── ApiGateway-distribution-spring/    # Spring distribution packaging
+
+================================================================================
+                    INTEGRATION WITH SERVICE DISCOVERY
+================================================================================
+
+1. SERVICE RESOLUTION
+   - Use ServiceRegistrationSystemApi.findByCustomQuery() for internal lookups
+   - Use ServiceRegistrationApi.findByServiceName() for service resolution
+   - Use ServiceRegistrationApi.getAvailableServices() to get only UP services
+   - Subscribe to service status changes via ConfigManager.registerConfigurationChangeListener()
+
+2. SERVICE MODEL MAPPING
+   From ServiceRegistration entity:
+   ┌─────────────────────────┬─────────────────────────────────────────────┐
+   │ Field                   │ Gateway Usage                               │
+   ├─────────────────────────┼─────────────────────────────────────────────┤
+   │ serviceName             │ Route matching key                          │
+   │ instanceId              │ Target instance identification              │
+   │ endpoint                │ Backend URL for proxying                    │
+   │ protocol                │ HTTP/HTTPS/gRPC protocol selection          │
+   │ status                  │ Include only UP services in routing pool    │
+   │ tags                    │ Route filtering, canary deployments         │
+   │ metadata                │ Custom routing rules, weights, priorities   │
+   │ healthCheckEndpoint     │ Active health checking                      │
+   │ healthCheckInterval     │ Health check frequency                      │
+   │ lastHeartbeat           │ Service freshness validation                │
+   └─────────────────────────┴─────────────────────────────────────────────┘
+
+3. HEALTH INTEGRATION
+   - Call ServiceRegistrationApi.performHealthCheck() for active health checks
+   - Monitor ServiceStatus changes (UP, DOWN, OUT_OF_SERVICE, STARTING)
+   - Use ServiceRegistrationSystemApi.cleanupInactiveServices() for housekeeping
+
+================================================================================
+                          CORE COMPONENTS
+================================================================================
+
+1. GATEWAY ROUTER (GatewayRouterApi)
+--------------------------------------------------------------------------------
+   Interface: it.water.apigateway.api.GatewayRouterApi
+
+   Methods:
+   - RouteResult route(GatewayRequest request)
+   - List<Route> getActiveRoutes()
+   - void refreshRoutes()
+   - void addDynamicRoute(Route route)
+   - void removeDynamicRoute(String routeId)
+
+2. LOAD BALANCER (LoadBalancerApi)
+--------------------------------------------------------------------------------
+   Interface: it.water.apigateway.api.LoadBalancerApi
+
+   Strategies:
+   - ROUND_ROBIN: Sequential distribution
+   - WEIGHTED_ROUND_ROBIN: Distribution based on metadata["weight"]
+   - LEAST_CONNECTIONS: Route to instance with fewest active connections
+   - RANDOM: Random selection
+   - IP_HASH: Consistent hashing based on client IP (sticky sessions)
+
+   Methods:
+   - ServiceRegistration selectInstance(String serviceName, GatewayRequest request)
+   - void reportSuccess(String serviceName, String instanceId, long latencyMs)
+   - void reportFailure(String serviceName, String instanceId, Throwable error)
+   - LoadBalancerStrategy getStrategy(String serviceName)
+   - void setStrategy(String serviceName, LoadBalancerStrategy strategy)
+
+3. CIRCUIT BREAKER (CircuitBreakerApi)
+--------------------------------------------------------------------------------
+   Interface: it.water.apigateway.api.CircuitBreakerApi
+
+   States:
+   - CLOSED: Normal operation, requests pass through
+   - OPEN: Failures exceeded threshold, requests fail fast
+   - HALF_OPEN: Testing if service recovered
+
+   Configuration (per service via metadata):
+   - failureThreshold: Number of failures to open circuit (default: 5)
+   - successThreshold: Successes in HALF_OPEN to close (default: 3)
+   - timeout: Duration circuit stays OPEN before HALF_OPEN (default: 30s)
+   - windowSize: Time window for counting failures (default: 60s)
+
+   Methods:
+   - boolean allowRequest(String serviceName, String instanceId)
+   - void recordSuccess(String serviceName, String instanceId)
+   - void recordFailure(String serviceName, String instanceId)
+   - CircuitState getState(String serviceName, String instanceId)
+   - CircuitBreakerConfig getConfig(String serviceName)
+
+4. RATE LIMITER (RateLimiterApi)
+--------------------------------------------------------------------------------
+   Interface: it.water.apigateway.api.RateLimiterApi
+
+   Algorithms:
+   - TOKEN_BUCKET: Smooth rate limiting with burst capacity
+   - SLIDING_WINDOW: Precise rate limiting over time windows
+   - FIXED_WINDOW: Simple counter reset per time window
+
+   Rate Limit Keys:
+   - CLIENT_IP: Per IP address
+   - USER_ID: Per authenticated user
+   - API_KEY: Per API key
+   - SERVICE: Per target service
+   - GLOBAL: System-wide limit
+
+   Methods:
+   - RateLimitResult checkRateLimit(RateLimitKey key, GatewayRequest request)
+   - void configureLimit(String ruleId, RateLimitRule rule)
+   - RateLimitRule getRule(String ruleId)
+   - List<RateLimitRule> getAllRules()
+
+5. REQUEST TRANSFORMER (RequestTransformerApi)
+--------------------------------------------------------------------------------
+   Interface: it.water.apigateway.api.RequestTransformerApi
+
+   Operations:
+   - Header manipulation (add, remove, modify)
+   - Path rewriting (/api/v1/users -> /users)
+   - Query parameter transformation
+   - Body transformation (JSON path manipulation)
+   - Protocol translation (REST to gRPC)
+
+   Methods:
+   - GatewayRequest transformRequest(GatewayRequest request, Route route)
+   - GatewayResponse transformResponse(GatewayResponse response, Route route)
+
+6. AUTHENTICATION GATEWAY (GatewayAuthenticationApi)
+--------------------------------------------------------------------------------
+   Interface: it.water.apigateway.api.GatewayAuthenticationApi
+
+   Supported Methods:
+   - JWT_VALIDATION: Validate JWT tokens
+   - API_KEY: Validate API keys against registry
+   - OAUTH2: OAuth2 token introspection
+   - BASIC_AUTH: Basic authentication (for legacy systems)
+   - PASSTHROUGH: Forward auth headers to backend
+
+   Methods:
+   - AuthResult authenticate(GatewayRequest request)
+   - void registerApiKey(String apiKey, ApiKeyConfig config)
+   - void revokeApiKey(String apiKey)
+   - boolean validateApiKey(String apiKey)
+
+================================================================================
+                           DOMAIN MODELS
+================================================================================
+
+1. Route Entity
+--------------------------------------------------------------------------------
+   @Entity
+   public class Route {
+       private Long id;
+       private String routeId;              // Unique identifier
+       private String pathPattern;          // /api/v1/users/**
+       private HttpMethod method;           // GET, POST, PUT, DELETE, ANY
+       private String targetServiceName;    // Service name in ServiceDiscovery
+       private String rewritePath;          // Optional path rewrite
+       private Integer priority;            // Route matching priority
+       private boolean enabled;
+       private Map<String, String> predicates;   // Additional matching rules
+       private Map<String, String> filters;      // Request/Response filters
+       private RouteMetadata metadata;
+   }
+
+2. GatewayRequest
+--------------------------------------------------------------------------------
+   public class GatewayRequest {
+       private String requestId;            // Unique request ID for tracing
+       private String method;
+       private String path;
+       private String queryString;
+       private Map<String, List<String>> headers;
+       private byte[] body;
+       private String clientIp;
+       private String protocol;
+       private long timestamp;
+       private Map<String, Object> attributes;  // Request-scoped data
+   }
+
+3. GatewayResponse
+--------------------------------------------------------------------------------
+   public class GatewayResponse {
+       private int statusCode;
+       private Map<String, List<String>> headers;
+       private byte[] body;
+       private long latencyMs;
+       private String upstreamInstanceId;
+       private Map<String, Object> metadata;
+   }
+
+4. RateLimitRule
+--------------------------------------------------------------------------------
+   @Entity
+   public class RateLimitRule {
+       private Long id;
+       private String ruleId;
+       private RateLimitKeyType keyType;
+       private String keyPattern;           // Regex for matching
+       private int maxRequests;
+       private int windowSeconds;
+       private RateLimitAlgorithm algorithm;
+       private int burstCapacity;           // For TOKEN_BUCKET
+       private boolean enabled;
+   }
+
+5. CircuitBreakerConfig
+--------------------------------------------------------------------------------
+   public class CircuitBreakerConfig {
+       private String serviceName;
+       private int failureThreshold;
+       private int successThreshold;
+       private int timeoutSeconds;
+       private int windowSizeSeconds;
+       private boolean enabled;
+   }
+
+================================================================================
+                          REST API ENDPOINTS
+================================================================================
+
+Base Path: /water/api/gateway
+
+1. ROUTING MANAGEMENT
+--------------------------------------------------------------------------------
+   POST   /routes                    Create new route
+   GET    /routes                    List all routes
+   GET    /routes/{routeId}          Get route by ID
+   PUT    /routes/{routeId}          Update route
+   DELETE /routes/{routeId}          Delete route
+   POST   /routes/refresh            Force route refresh from ServiceDiscovery
+
+2. RATE LIMITING
+--------------------------------------------------------------------------------
+   POST   /rate-limits               Create rate limit rule
+   GET    /rate-limits               List all rate limit rules
+   GET    /rate-limits/{ruleId}      Get rule by ID
+   PUT    /rate-limits/{ruleId}      Update rule
+   DELETE /rate-limits/{ruleId}      Delete rule
+   GET    /rate-limits/stats         Get rate limit statistics
+
+3. CIRCUIT BREAKER
+--------------------------------------------------------------------------------
+   GET    /circuit-breakers          List circuit breaker states
+   GET    /circuit-breakers/{service}/{instance}  Get specific circuit state
+   POST   /circuit-breakers/{service}/{instance}/reset  Force reset circuit
+   PUT    /circuit-breakers/{service}/config     Update circuit config
+
+4. HEALTH & METRICS
+--------------------------------------------------------------------------------
+   GET    /health                    Gateway health status
+   GET    /metrics                   Gateway metrics (requests, latency, errors)
+   GET    /services                  List discovered services with status
+   GET    /services/{serviceName}/instances  List instances of a service
+
+5. PROXY ENDPOINT
+--------------------------------------------------------------------------------
+   ANY    /proxy/{serviceName}/**    Main proxy endpoint for routing requests
+
+================================================================================
+                    SYSTEM API (Internal Use)
+================================================================================
+
+Interface: GatewaySystemApi extends BaseEntitySystemApi<Route>
+
+Methods:
+   - void syncWithServiceDiscovery()
+   - void evictServiceFromCache(String serviceName)
+   - Map<String, ServiceStats> getServiceStatistics()
+   - void updateCircuitBreakerState(String service, String instance, CircuitState state)
+   - List<ServiceRegistration> getHealthyInstances(String serviceName)
+
+================================================================================
+                         CONFIGURATION
+================================================================================
+
+application.properties / application.yml:
+
+# Gateway Core
+water.gateway.enabled=true
+water.gateway.proxy.basePath=/proxy
+water.gateway.proxy.timeout=30000
+water.gateway.proxy.maxConnections=1000
+water.gateway.proxy.connectTimeout=5000
+
+# Service Discovery Integration
+water.gateway.discovery.refreshInterval=30000
+water.gateway.discovery.cacheEnabled=true
+water.gateway.discovery.cacheTtl=60000
+
+# Load Balancer
+water.gateway.loadbalancer.defaultStrategy=ROUND_ROBIN
+water.gateway.loadbalancer.healthCheckEnabled=true
+
+# Circuit Breaker Defaults
+water.gateway.circuitbreaker.enabled=true
+water.gateway.circuitbreaker.failureThreshold=5
+water.gateway.circuitbreaker.timeout=30
+water.gateway.circuitbreaker.windowSize=60
+
+# Rate Limiting
+water.gateway.ratelimit.enabled=true
+water.gateway.ratelimit.defaultAlgorithm=TOKEN_BUCKET
+water.gateway.ratelimit.defaultMaxRequests=1000
+water.gateway.ratelimit.defaultWindowSeconds=60
+
+# Security
+water.gateway.security.jwtValidation=true
+water.gateway.security.apiKeyEnabled=true
+water.gateway.security.corsEnabled=true
+water.gateway.security.corsAllowedOrigins=*
+
+# Metrics & Logging
+water.gateway.metrics.enabled=true
+water.gateway.metrics.detailedLatency=true
+water.gateway.logging.requestBody=false
+water.gateway.logging.responseBody=false
+
+================================================================================
+                     INTERCEPTORS & LIFECYCLE
+================================================================================
+
+1. PRE-ROUTING INTERCEPTORS
+   - AuthenticationInterceptor: Validate credentials
+   - RateLimitInterceptor: Check rate limits
+   - RequestValidationInterceptor: Validate request format
+
+2. POST-ROUTING INTERCEPTORS
+   - CircuitBreakerInterceptor: Track success/failure
+   - MetricsInterceptor: Record latency and status
+   - LoggingInterceptor: Log request/response
+
+3. LIFECYCLE HOOKS
+   - @OnActivate: Initialize connection pools, load routes from DB
+   - @OnDeactivate: Graceful shutdown, drain connections
+
+================================================================================
+                    SERVICE DISCOVERY EVENTS
+================================================================================
+
+The Gateway should react to ServiceDiscovery events:
+
+1. SERVICE_REGISTERED
+   - Add service to routing table
+   - Initialize circuit breaker
+   - Start health monitoring
+
+2. SERVICE_DEREGISTERED
+   - Remove from routing table
+   - Close circuit breaker
+   - Drain active connections gracefully
+
+3. SERVICE_STATUS_CHANGED
+   - UP: Add to load balancer pool
+   - DOWN: Remove from load balancer pool
+   - OUT_OF_SERVICE: Mark as unavailable, keep circuit state
+
+4. HEARTBEAT_TIMEOUT
+   - Mark service as potentially unhealthy
+   - Increase health check frequency
+   - Consider opening circuit breaker
+
+================================================================================
+                         ERROR HANDLING
+================================================================================
+
+HTTP Status Codes:
+   - 502 Bad Gateway: Backend service error
+   - 503 Service Unavailable: No healthy instances / Circuit open
+   - 504 Gateway Timeout: Backend timeout
+   - 429 Too Many Requests: Rate limit exceeded
+   - 401 Unauthorized: Authentication failed
+   - 403 Forbidden: Authorization failed
+
+Error Response Format:
+{
+    "timestamp": "2024-01-15T10:30:00Z",
+    "status": 503,
+    "error": "Service Unavailable",
+    "message": "No healthy instances available for service: payment-service",
+    "path": "/proxy/payment-service/api/charge",
+    "requestId": "req-abc123",
+    "details": {
+        "serviceName": "payment-service",
+        "circuitState": "OPEN",
+        "lastError": "Connection refused"
+    }
+}
+
+================================================================================
+                    PERMISSION SYSTEM
+================================================================================
+
+Roles:
+   - gatewayManager: Full CRUD on routes, rate limits, circuit breakers
+   - gatewayViewer: Read-only access to configuration and metrics
+   - gatewayOperator: Update status, reset circuits, refresh routes
+
+Actions:
+   - SAVE, UPDATE, FIND, FIND_ALL, REMOVE (standard CRUD)
+   - CONFIGURE_RATE_LIMIT
+   - MANAGE_CIRCUIT_BREAKER
+   - VIEW_METRICS
+   - PROXY_REQUEST
+
+================================================================================
+                    DEPENDENCIES
+================================================================================
+
+Required Modules:
+   - Core
+   - Repository
+   - JpaRepository
+   - Rest
+   - ServiceDiscovery
+
+Optional Integrations:
+   - User (for user-based rate limiting)
+   - Permission (for route-level authorization)
+
+External Libraries:
+   - Netty or Undertow (HTTP proxy)
+   - Resilience4j (circuit breaker reference)
+   - Bucket4j (rate limiting reference)
+   - Micrometer (metrics)
+
+================================================================================
+                    IMPLEMENTATION PHASES
+================================================================================
+
+Phase 1: Core Routing
+   - Basic proxy functionality
+   - ServiceDiscovery integration
+   - Simple round-robin load balancing
+   - Route entity and REST API
+
+Phase 2: Resilience
+   - Circuit breaker implementation
+   - Rate limiting
+   - Retry logic
+   - Timeout handling
+
+Phase 3: Security
+   - JWT validation
+   - API key management
+   - CORS configuration
+   - Request validation
+
+Phase 4: Observability
+   - Metrics collection
+   - Distributed tracing integration
+   - Access logging
+   - Health endpoints
+
+Phase 5: Advanced Features
+   - Request/Response transformation
+   - Canary deployments (using tags)
+   - A/B testing support
+   - WebSocket proxying
+
+================================================================================
+                         END OF SPECIFICATION
+================================================================================

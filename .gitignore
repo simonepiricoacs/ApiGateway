@@ -1,0 +1,8 @@
+/build/
+/.gradle/
+/ApiGateway-service-spring/build/
+/.gradle/
+/ApiGateway-service-spring/build/
+/ApiGateway-model/build/
+/ApiGateway-api/build/
+/gradle/

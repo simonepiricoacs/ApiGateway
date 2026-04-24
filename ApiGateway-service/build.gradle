@@ -98,6 +98,7 @@ waterDescriptor {
     description = 'HTTP API Gateway with routing, load balancing, rate limiting, and circuit breaker for Water Framework microservices'
 
     output {
+        standardPin 'jdbc'
         pin('it.water.integration.api-gateway') {}
     }
 

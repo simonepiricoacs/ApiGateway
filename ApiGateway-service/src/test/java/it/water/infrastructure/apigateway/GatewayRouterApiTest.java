@@ -1,11 +1,14 @@
 package it.water.infrastructure.apigateway;
 
+import it.water.core.api.bundle.ApplicationProperties;
 import it.water.infrastructure.apigateway.api.CircuitBreakerApi;
 import it.water.infrastructure.apigateway.api.GatewayRouterApi;
 import it.water.infrastructure.apigateway.api.GatewaySystemApi;
+import it.water.infrastructure.apigateway.api.options.GatewaySystemOptions;
 import it.water.infrastructure.apigateway.api.RateLimiterApi;
 import it.water.infrastructure.apigateway.api.RouteSystemApi;
 import it.water.infrastructure.apigateway.model.*;
+import it.water.infrastructure.apigateway.service.GatewayRouterServiceImpl;
 import it.water.infrastructure.apigateway.service.GatewaySystemServiceImpl;
 import it.water.core.api.registry.ComponentRegistry;
 import it.water.core.api.service.Service;
@@ -17,11 +20,18 @@ import it.water.service.discovery.model.ServiceStatus;
 import lombok.Setter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 /**
  * Unit tests for GatewayRouterServiceImpl covering routing, dynamic routes,
@@ -55,6 +65,14 @@ class GatewayRouterApiTest implements Service {
     @Inject
     @Setter
     private GatewaySystemApi gatewaySystemApi;
+
+    @Inject
+    @Setter
+    private GatewaySystemOptions gatewaySystemOptions;
+
+    @Inject
+    @Setter
+    private ApplicationProperties applicationProperties;
 
     @BeforeAll
     void beforeAll() {
@@ -316,6 +334,142 @@ class GatewayRouterApiTest implements Service {
         Assertions.assertEquals(502, response.getStatusCode());
 
         gatewayRouterApi.removeDynamicRoute(routeId);
+    }
+
+    @Test
+    @Order(20)
+    void buildTargetUrlDoesNotAppendSlashWhenRequestPathIsRoot() throws Exception {
+        GatewayRouterServiceImpl router = new GatewayRouterServiceImpl();
+        Method buildTargetUrl = GatewayRouterServiceImpl.class
+                .getDeclaredMethod("buildTargetUrl", ServiceRegistration.class, GatewayRequest.class);
+        buildTargetUrl.setAccessible(true);
+
+        ServiceRegistration instance = new ServiceRegistration("svc", "1.0", "inst-1",
+                "http://localhost:9081/water/assetcategories", "http", ServiceStatus.UP);
+        GatewayRequest request = GatewayRequest.builder()
+                .method(HttpMethod.GET)
+                .path("/")
+                .build();
+
+        String targetUrl = (String) buildTargetUrl.invoke(router, instance, request);
+        Assertions.assertEquals("http://localhost:9081/water/assetcategories", targetUrl);
+    }
+
+    @Test
+    @Order(21)
+    void buildTargetUrlDoesNotDuplicateRegisteredEndpointSuffix() throws Exception {
+        GatewayRouterServiceImpl router = new GatewayRouterServiceImpl();
+        Method buildTargetUrl = GatewayRouterServiceImpl.class
+                .getDeclaredMethod("buildTargetUrl", ServiceRegistration.class, GatewayRequest.class);
+        buildTargetUrl.setAccessible(true);
+
+        ServiceRegistration instance = new ServiceRegistration("svc", "1.0", "inst-1",
+                "http://localhost:9081/water/assetcategories", "http", ServiceStatus.UP);
+        GatewayRequest request = GatewayRequest.builder()
+                .method(HttpMethod.GET)
+                .path("/assetcategories")
+                .build();
+
+        String targetUrl = (String) buildTargetUrl.invoke(router, instance, request);
+        Assertions.assertEquals("http://localhost:9081/water/assetcategories", targetUrl);
+    }
+
+    @Test
+    @Order(22)
+    @SuppressWarnings("unchecked")
+    void proxyRequestStripsHopByHopResponseHeaders() throws Exception {
+        GatewayRouterServiceImpl router = new GatewayRouterServiceImpl();
+        HttpClient httpClient = Mockito.mock(HttpClient.class);
+        HttpResponse<byte[]> httpResponse = Mockito.mock(HttpResponse.class);
+
+        Field httpClientField = GatewayRouterServiceImpl.class.getDeclaredField("httpClient");
+        httpClientField.setAccessible(true);
+        httpClientField.set(router, httpClient);
+
+        Mockito.when(httpResponse.statusCode()).thenReturn(200);
+        Mockito.when(httpResponse.body()).thenReturn("{\"ok\":true}".getBytes());
+        Mockito.when(httpResponse.headers()).thenReturn(HttpHeaders.of(
+                Map.of(
+                        "content-type", List.of("application/json"),
+                        "transfer-encoding", List.of("chunked"),
+                        "connection", List.of("keep-alive"),
+                        "content-length", List.of("11")
+                ),
+                (name, value) -> true
+        ));
+        Mockito.when(httpClient.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+                .thenReturn(httpResponse);
+
+        Method proxyRequest = GatewayRouterServiceImpl.class
+                .getDeclaredMethod("proxyRequest", GatewayRequest.class, ServiceRegistration.class, Route.class);
+        proxyRequest.setAccessible(true);
+
+        GatewayRequest request = GatewayRequest.builder()
+                .method(HttpMethod.GET)
+                .path("/assetcategories")
+                .headers(new java.util.HashMap<>())
+                .clientIp("127.0.0.1")
+                .build();
+        ServiceRegistration instance = new ServiceRegistration("svc", "1.0", "inst-1",
+                "http://localhost:9081/water/assetcategories", "http", ServiceStatus.UP);
+
+        GatewayResponse response = (GatewayResponse) proxyRequest.invoke(router, request, instance, null);
+        Assertions.assertEquals("application/json", response.getHeaders().get("content-type"));
+        Assertions.assertFalse(response.getHeaders().containsKey("transfer-encoding"));
+        Assertions.assertFalse(response.getHeaders().containsKey("connection"));
+        Assertions.assertFalse(response.getHeaders().containsKey("content-length"));
+    }
+
+    @Test
+    @Order(23)
+    @SuppressWarnings("unchecked")
+    void proxyRequestUsesConfiguredTimeout() throws Exception {
+        GatewayRouterServiceImpl router = new GatewayRouterServiceImpl();
+        HttpClient httpClient = Mockito.mock(HttpClient.class);
+        HttpResponse<byte[]> httpResponse = Mockito.mock(HttpResponse.class);
+
+        Field httpClientField = GatewayRouterServiceImpl.class.getDeclaredField("httpClient");
+        httpClientField.setAccessible(true);
+        httpClientField.set(router, httpClient);
+
+        Field optionsField = GatewayRouterServiceImpl.class.getDeclaredField("gatewaySystemOptions");
+        optionsField.setAccessible(true);
+        optionsField.set(router, gatewaySystemOptions);
+
+        Mockito.when(httpResponse.statusCode()).thenReturn(200);
+        Mockito.when(httpResponse.body()).thenReturn(new byte[0]);
+        Mockito.when(httpResponse.headers()).thenReturn(HttpHeaders.of(Map.of(), (name, value) -> true));
+
+        Properties props = new Properties();
+        props.setProperty("water.apigateway.proxy.timeout", "1234");
+        try {
+            applicationProperties.loadProperties(props);
+
+            Method proxyRequest = GatewayRouterServiceImpl.class
+                    .getDeclaredMethod("proxyRequest", GatewayRequest.class, ServiceRegistration.class, Route.class);
+            proxyRequest.setAccessible(true);
+
+            GatewayRequest request = GatewayRequest.builder()
+                    .method(HttpMethod.GET)
+                    .path("/assetcategories")
+                    .headers(new java.util.HashMap<>())
+                    .clientIp("127.0.0.1")
+                    .build();
+            ServiceRegistration instance = new ServiceRegistration("svc", "1.0", "inst-1",
+                    "http://localhost:9081/water/assetcategories", "http", ServiceStatus.UP);
+
+            Mockito.when(httpClient.send(Mockito.argThat((HttpRequest sent) ->
+                            sent.timeout().isPresent() && sent.timeout().get().toMillis() == 1234L),
+                    Mockito.any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+
+            proxyRequest.invoke(router, request, instance, null);
+
+            Mockito.verify(httpClient).send(Mockito.argThat((HttpRequest sent) ->
+                            sent.timeout().isPresent() && sent.timeout().get().toMillis() == 1234L),
+                    Mockito.any(HttpResponse.BodyHandler.class));
+        } finally {
+            applicationProperties.unloadProperties(props);
+        }
     }
 
     private GatewayRequest buildRequest(HttpMethod method, String path) {

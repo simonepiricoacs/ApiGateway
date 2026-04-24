@@ -10,6 +10,12 @@ dependencies {
     //Validation
     implementation group: 'jakarta.validation', name: 'jakarta.validation-api', version: project.jakartaValidationVersion
     implementation group: 'jakarta.persistence', name: 'jakarta.persistence-api', version: project.jakartaPersistenceVersion
+    implementation group: 'jakarta.servlet', name: 'jakarta.servlet-api', version: "6.1.0"
+    implementation group: 'javax.annotation', name: 'javax.annotation-api', version: '1.3.2'
+    implementation group: 'javax.ws.rs', name: 'javax.ws.rs-api', version: '2.1.1'
+    implementation group: 'it.water.core', name: 'Core-api', version: project.waterVersion
+    implementation group: 'it.water.core', name: 'Core-model', version: project.waterVersion
+    implementation group: 'it.water.implementation', name: 'Implementation-spring', version: project.waterVersion
     //Core Water Deps
     implementation group: 'it.water.distribution', name: 'Water-distribution-spring', version: project.waterVersion
     // JPA Repository

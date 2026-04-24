@@ -1,13 +1,20 @@
 package it.water.infrastructure.apigateway.api.rest;
 
-import it.water.infrastructure.apigateway.model.ServiceStats;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 import it.water.core.api.service.rest.FrameworkRestApi;
 import it.water.core.api.service.rest.RestApi;
+import it.water.infrastructure.apigateway.model.ServiceStats;
 import it.water.service.rest.api.security.LoggedIn;
-import io.swagger.annotations.*;
 
-import javax.ws.rs.*;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import java.util.Map;
 
 /**
@@ -57,8 +64,9 @@ public interface GatewayManagementRestApi extends RestApi {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "/sync", notes = "Sync with ServiceDiscovery", httpMethod = "POST")
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Synced"),
+            @ApiResponse(code = 204, message = "Synced"),
+            @ApiResponse(code = 502, message = "Sync failed"),
             @ApiResponse(code = 401, message = "Not authorized")
     })
-    void syncServiceDiscovery();
+    Response syncServiceDiscovery();
 }

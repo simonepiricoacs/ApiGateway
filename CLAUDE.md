@@ -1,107 +1,176 @@
 # ApiGateway Module — HTTP API Gateway
 
 ## Purpose
-Provides a production-ready API Gateway for the Water Framework microservices ecosystem. Handles reverse proxying, load balancing, circuit breaking, rate limiting, and service discovery integration. Designed as a standalone Spring Boot service that sits in front of downstream microservices.
+
+Production HTTP gateway for the Water Framework microservices ecosystem. Sits in front of downstream services, matches incoming requests against configured `Route` rules, resolves a live instance through `ServiceDiscovery`, and forwards the request. Also provides circuit breaking, load balancing, rate limiting, and runtime management endpoints.
+
+Runtimes supported: **OSGi / Karaf** (via `bnd.bnd` + `WaterBundleActivator`) and **Spring Boot** (via `ApiGateway-service-spring`). Both runtimes expose the same logical endpoints through different technologies (JAX-RS vs Spring MVC).
 
 ## Sub-modules
 
-| Sub-module | Package | Role |
+| Sub-module | Runtime | Key classes |
 |---|---|---|
-| `ApiGateway-api` | `it.water.apigateway.api` | Interfaces: `GatewayApi`, `LoadBalancerApi`, `CircuitBreakerApi`, `RateLimiterApi`, `ProxyHandlerApi`, `ServiceDiscoveryClientApi` |
-| `ApiGateway-model` | `it.water.apigateway.model` | Entities: `GatewayRoute`, `GatewayRuleSet`, `RouteAction`, enums, constants |
-| `ApiGateway-service` | `it.water.apigateway.service` | Implementations: `GatewayServiceImpl`, `LoadBalancerImpl`, `CircuitBreakerImpl`, `RateLimiterImpl`, `ProxyHandlerImpl`, `ServiceDiscoveryClientImpl` |
+| `ApiGateway-api` | All | `GatewayApi`, `GatewayRouterApi`, `GatewaySystemApi`, `LoadBalancerApi`, `CircuitBreakerApi`, `RateLimiterApi`, `ProxyHandlerApi`, `GatewayRouteApi`, `RateLimitRuleApi`, `GatewaySystemOptions`, REST contracts |
+| `ApiGateway-model` | All | `Route`, `RateLimitRule`, `GatewayRequest`, `GatewayResponse`, `RouteResult`, `RateLimitResult`, `ServiceStats`, `CircuitBreakerConfig`, `HttpMethod`, `LoadBalancerStrategy`, `CircuitState`, `RateLimitAlgorithm`, `RateLimitKeyType`, `GatewayConstants`, `ApiGatewayActions` |
+| `ApiGateway-service` | OSGi / Karaf | Service impls, JAX-RS controllers, `bnd.bnd`, `GatewaySystemOptionsImpl` |
+| `ApiGateway-service-spring` | Spring Boot | Spring MVC REST controllers (constructor-injected) |
 
-## Key Services
-
-### GatewayServiceImpl
-- Matches incoming requests to `GatewayRoute` by URL pattern (regex, cached in `ConcurrentHashMap<String, Pattern>`)
-- Routes are pre-sorted by priority (descending) and held in a `volatile` unmodifiable list — atomic swap on route updates
-- Delegates to `ProxyHandlerImpl` for HTTP forwarding with retry support
-
-### LoadBalancerImpl
-- Supports **Round-Robin** and **Weighted Round-Robin** strategies
-- Separate atomic counters for each strategy to avoid interference
-- Integrates with `ServiceDiscoveryClientApi` to fetch live instances
-
-### CircuitBreakerImpl
-- States: `CLOSED` (normal) → `OPEN` (failing) → `HALF_OPEN` (testing)
-- Configurable failure threshold and recovery timeout
-- Per-route circuit breaker instances
-
-### RateLimiterImpl
-- Token bucket algorithm, configurable per route/client
-- Thread-safe via `ConcurrentHashMap` of `AtomicLong` counters
-
-### ProxyHandlerImpl
-- Forwards HTTP requests using `java.net.http.HttpClient`
-- Strips hop-by-hop headers using a `Set<String>` (O(1) lookup): `connection`, `keep-alive`, `transfer-encoding`, `te`, `upgrade`, `proxy-authorization`, `proxy-authenticate`, `trailers`
-- Adds `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto` headers
-
-### ServiceDiscoveryClientImpl
-- Lazy `HttpClient` initialization via `@OnActivate` using configured timeout
-- Queries `ServiceDiscovery` module's REST API to resolve service instances
-
-## GatewayRoute Entity
+## Entity — Route
 
 ```java
-public class GatewayRoute extends AbstractJpaEntity implements ProtectedEntity, OwnedResource {
-    private String routeName;
-    private String pathPattern;          // regex pattern matched against request URI
-    private String targetServiceName;    // service name in ServiceDiscovery
-    private String targetUrl;            // direct URL (if no service discovery)
-    private int priority;                // higher = matched first
-    private boolean stripPrefix;         // remove matched prefix before forwarding
-    private String loadBalancingStrategy; // ROUND_ROBIN, WEIGHTED_ROUND_ROBIN
-    private boolean circuitBreakerEnabled;
-    private boolean rateLimitEnabled;
-    private int rateLimitRequestsPerMinute;
-}
+@Entity
+@Table(name = "gateway_route",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"routeId"}))
+@AccessControl(
+    availableActions = {
+        CrudActions.SAVE, CrudActions.UPDATE, CrudActions.FIND, CrudActions.FIND_ALL, CrudActions.REMOVE,
+        ApiGatewayActions.CONFIGURE_RATE_LIMIT,
+        ApiGatewayActions.MANAGE_CIRCUIT_BREAKER,
+        ApiGatewayActions.VIEW_METRICS,
+        ApiGatewayActions.PROXY_REQUEST,
+        ApiGatewayActions.REFRESH_ROUTES
+    },
+    rolesPermissions = { ... }
+)
+public class Route extends AbstractJpaEntity
+    implements ProtectedEntity, OwnedResource { ... }
 ```
 
-## REST Endpoints
+Fields:
 
-Base path: `/water/api/gateway` (CXF server adds `/water` prefix automatically)
+| Field | Notes |
+|---|---|
+| `routeId` | unique logical id, `@NoMalitiusCode`, size 1-100 |
+| `pathPattern` | regex against request path, size 1-500 |
+| `method` | `HttpMethod` enum (`GET` ... `ANY`); default `ANY` (`@PrePersist`) |
+| `targetServiceName` | logical service name resolved via ServiceDiscovery |
+| `rewritePath` | optional, applied before forward |
+| `priority` | higher wins |
+| `enabled` | boolean, default `true` |
+| `predicates` | `Map<String,String>` extension hook (EAGER) |
+| `filters` | `Map<String,String>` extension hook (EAGER) |
+| `ownerUserId` | hidden from the Public JSON view |
 
-| Interface | `@Path` annotation | Full URL |
+## Custom actions
+
+`it.water.infrastructure.apigateway.actions.ApiGatewayActions`:
+
+- `CONFIGURE_RATE_LIMIT = "configure-rate-limit"`
+- `MANAGE_CIRCUIT_BREAKER = "manage-circuit-breaker"`
+- `VIEW_METRICS = "view-metrics"`
+- `PROXY_REQUEST = "proxy-request"`
+- `REFRESH_ROUTES = "refresh-routes"`
+
+## Default roles
+
+| Role | Actions |
+|---|---|
+| `gatewayManager` | full CRUD + all custom actions |
+| `gatewayViewer` | `find`, `find_all`, `view-metrics` |
+| `gatewayOperator` | `find`, `find_all`, `update`, `view-metrics`, `proxy-request`, `refresh-routes` |
+
+## Key services
+
+### GatewayRouterServiceImpl
+Matches request → resolves instance via `LoadBalancer` → checks `CircuitBreaker` → forwards via `ProxyHandler`. Regex patterns cached in `ConcurrentHashMap<String, Pattern>`. Routes held in a `volatile` priority-sorted list, atomically swapped on update.
+
+### GatewaySystemServiceImpl
+In-process `ServiceRegistrationApi` first, HTTP fallback to `/water/internal/serviceregistration/available` when the gateway runs in a separate runtime from `ServiceDiscovery`. Maintains an in-memory `serviceCache: Map<String, List<ServiceRegistration>>`. `HttpClient` lazily initialized in `@OnActivate`.
+
+### LoadBalancerServiceImpl
+`ROUND_ROBIN` and `WEIGHTED_ROUND_ROBIN`. Separate `AtomicInteger` counter per strategy per `serviceName`.
+
+### CircuitBreakerServiceImpl
+Per-instance state (key = `serviceName + ":" + instanceId`). A single failing Karaf does not poison the whole logical service.
+
+### RateLimiterServiceImpl
+Pluggable algorithm per `RateLimitRule`: `TokenBucket` and `FixedWindow`. Thread-safe via `ConcurrentHashMap`.
+
+### ProxyHandlerImpl
+JDK 11+ `HttpClient`. Hop-by-hop header stripping (`connection`, `keep-alive`, `transfer-encoding`, `te`, `upgrade`, `proxy-authorization`, `proxy-authenticate`, `trailers`). Injects `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`.
+
+## REST boundaries
+
+### Management API
+
+Base path: `/water/api/gateway/`. JWT-protected CRUD + operational endpoints.
+
+| Method | Path |
+|---|---|
+| `POST` / `PUT` / `GET` / `DELETE` | `/water/api/gateway/routes[/{id}]` |
+| `POST` / `PUT` / `GET` / `DELETE` | `/water/api/gateway/rate-limits[/{id}]` |
+| `GET` | `/water/api/gateway/management/health` |
+| `GET` | `/water/api/gateway/management/metrics` |
+| `GET` | `/water/api/gateway/management/circuitBreakers` |
+| `POST` | `/water/api/gateway/management/sync` |
+
+### Proxy entrypoint
+
+Base path: `/water/proxy/`. Supported verbs: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`, `HEAD`; `@LoggedIn` on the Spring runtime.
+
+```
+GET | POST | PUT | DELETE | OPTIONS | HEAD  /water/proxy/{path:.+}
+```
+
+Routed to the live instance via the pipeline described above. `404` if no route matches, `502` on proxy failure.
+
+## Reserved Gateway Authentication
+
+The following types are kept as a future extension point and are not part of the current proxy path:
+
+- `GatewayAuthenticationApi`
+- `GatewayAuthenticationServiceImpl`
+- `AuthResult`
+- `AuthMethod`
+- `ApiKeyConfig`
+
+Rules:
+
+- do not wire `GatewayAuthenticationServiceImpl` into `GatewayRouterServiceImpl` until JWT validation delegates to the real Water `JwtTokenService`
+- JWT authentication must stay fail-closed; never decode unsigned JWT payloads locally and treat them as authenticated
+- the current runtime boundary is protected by Water REST security annotations (`@LoggedIn`)
+
+## Configuration
+
+All properties read via `GatewaySystemOptionsImpl` through `ApplicationProperties`:
+
+| Property | Default | Notes |
 |---|---|---|
-| `RouteRestApi` | `/api/gateway/routes` | `/water/api/gateway/routes` |
-| `RateLimitRuleRestApi` | `/api/gateway/rate-limits` | `/water/api/gateway/rate-limits` |
-| `GatewayManagementRestApi` | `/api/gateway/management` | `/water/api/gateway/management` |
+| `water.apigateway.service.discovery.url` | `""` | Empty → use in-process registry only |
+| `water.apigateway.proxy.timeout` | `30000` ms | Upstream HTTP timeout, min `1` ms |
+| `water.apigateway.circuit.breaker.failure.threshold` | `5` | Min `1` |
+| `water.apigateway.circuit.breaker.timeout.ms` | `30000` ms | Circuit OPEN timeout, min `0` |
+| `water.apigateway.rate.limiter.default.rpm` | `0` | `0` = fallback rate limiter disabled |
 
-**CRITICAL**: RestApi `@Path` annotations must NOT include the `/water` prefix — the CXF REST server in Water Framework adds `/water` as its base context automatically. Including `/water` in `@Path` would result in a doubled path (`/water/water/...`) and HTTP 404.
+Keys are centralized in `it.water.infrastructure.apigateway.model.GatewayConstants`.
 
-## Testing Notes
-- **138 tests pass** (unit + Karate REST integration)
-- Karate runner: `ApiGatewayRestApiTest` — runs all feature files in `src/test/resources/karate/`
-- Feature files: `route-crud.feature`, `rate-limit-rule-crud.feature`, `gateway-management.feature`
-- `it.water.application.properties` sets `water.testMode=true` and `water.rest.security.jwt.validate=false` for Karate tests
-- Coverage: 79% instructions, 67% branches (REST package: 86%)
+## Dual-runtime REST controllers
 
-## Known Issues
-- When multiple Spring contexts are created in the same JVM (e.g., parallel test suites), the static `initialized` flag causes `ComponentRegistry` bean missing errors
-- Fix: align all test classes to share the same `@SpringBootTest` configuration
+Two sets of controllers coexist for the two supported runtimes:
 
-## Configuration Properties
-```properties
-water.apigateway.proxy.timeout=30000
-water.apigateway.circuit.breaker.failure.threshold=5
-water.apigateway.circuit.breaker.timeout.ms=60000
-water.apigateway.rate.limiter.default.rpm=100
-water.apigateway.service.discovery.url=http://localhost:8080
-```
+- **JAX-RS** (`ApiGateway-service/.../rest/`): `@FrameworkRestController` + `@Inject @Setter`, wired through the Water `ComponentRegistry`. Used in OSGi / Karaf.
+- **Spring MVC** (`ApiGateway-service-spring/.../rest/spring/`): `@RestController` + constructor injection with `final` fields. Used in Spring Boot.
 
-## Dependencies
-- `it.water.core:Core-api` — component lifecycle, registry
-- `it.water.repository:Repository-entity` — `AbstractJpaEntity`, `ProtectedEntity`, `OwnedResource`
-- `it.water.jparepository:JpaRepository-spring` — Spring JPA persistence
-- `it.water.service.discovery:ServiceDiscovery-api` — service instance resolution
-- `it.water.rest:Rest-spring-api` — Spring MVC REST controller base
-- `org.springframework.boot:spring-boot-starter-web` — HTTP server
-- `java.net.http.HttpClient` (JDK 11+) — reverse proxy HTTP client
+This is intentional. Both controller sets implement the same logical contract (`*RestApi` interface) and expose the same paths. Do **not** "uniform" them to a single pattern — the duplication is how Water supports both runtimes.
 
-## Code Generation Rules
-- New route matching strategies: implement `LoadBalancerApi` and register as `@FrameworkComponent`
-- New circuit breaker backends: implement `CircuitBreakerApi`
-- REST controller (`GatewayRouteRestController`) tested **exclusively via Karate** — no JUnit direct calls
+## Gradle / packaging
+
+- `ApiGateway-service` is published both as a regular JAR and as an OSGi bundle through `bnd.bnd` (activator: `it.water.implementation.osgi.bundle.WaterBundleActivator`). The BND descriptor imports Water Core / Repository / REST / ServiceDiscovery / Implementation packages.
+- `ApiGateway-service-spring` is a regular Spring Boot module.
+
+## Testing
+
+- Unit tests: `WaterTestExtension` — service / router / load-balancer / rate-limiter behavior
+- REST boundaries: **Karate only** — no direct JUnit calls to the REST controllers. Feature files: `route-crud.feature`, `rate-limit-rule-crud.feature`, `gateway-management.feature`, `gateway-proxy.feature`.
+- `it.water.application.properties` sets `water.testMode=true` and `water.rest.security.jwt.validate=false` for the Karate runtime.
+
+## Code generation rules
+
+- New load-balancer strategies: implement `LoadBalancerApi` + register as `@FrameworkComponent`
+- New rate-limit algorithms: add to `RateLimitAlgorithm` enum + branch in `RateLimiterServiceImpl`
+- New circuit-breaker behavior: subclass / override in `CircuitBreakerServiceImpl`
+- New route actions: add to `ApiGatewayActions` and extend the `@AccessControl` of `Route`
 - Route regex patterns are compiled once and cached — always use the cache, never recompile on each request
-- Proxy header manipulation uses `Set<String>` for O(1) hop-by-hop header lookup
+- `@Path` on JAX-RS `*RestApi` must NOT include `/water` (CXF adds it automatically)
+- Spring MVC controllers: **use constructor injection with `final` fields**, never `@Autowired` field injection
+- REST controllers tested **exclusively via Karate** — no direct JUnit calls

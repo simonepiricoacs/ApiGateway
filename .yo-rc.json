@@ -1,0 +1,62 @@
+{
+    "generator-water": {
+			"hasSonarqubeIntegration": true,
+			"hasAuthentication": true,
+			"applicationTypeEntity": true,
+			"applicationType": "entity",
+			"projectSuffix": "apiGateway",
+			"projectSuffixUpperCase": "ApiGateway",
+			"projectSuffixLowerCase": "apigateway",
+			"projectName": "ApiGateway",
+			"projectGroupId": "it.water.infrastructure.apigateway",
+			"projectVersion": "project.waterVersion",
+			"projectTechnology": "water",
+			"hasRestServices": true,
+			"restContextRoot": "/api/gateway",
+			"hasModel": true,
+			"modelName": "Route",
+			"modelNameLowerCase": "route",
+			"isProtectedEntity": true,
+			"isOwnedEntity": true,
+			"persistenceLib": "jakarta",
+			"validationLib": "jakarta",
+			"projectPath": "ApiGateway",
+			"projectApiPath": "ApiGateway/ApiGateway-api",
+			"projectModelPath": "ApiGateway/ApiGateway-model",
+			"projectServicePath": "ApiGateway/ApiGateway-service",
+			"projectParentPath": "ApiGateway",
+			"projectBasePath": "/src/main/java/it/water/infrastructure/apigateway",
+			"projectTestPath": "/src/test/java/it/water/infrastructure/apigateway",
+			"apiPackagePath": "/src/main/java/it/water/infrastructure/apigateway/api",
+			"apiPackage": "it.water.infrastructure.apigateway.api",
+			"actionsPackagePath": "/src/main/java/it/water/infrastructure/apigateway/actions",
+			"actionsPackage": "it.water.infrastructure.apigateway.actions",
+			"modelPackagePath": "/src/main/java/it/water/infrastructure/apigateway/model",
+			"modelPackage": "it.water.infrastructure.apigateway.model",
+			"repositoryPackagePath": "/src/main/java/it/water/infrastructure/apigateway/repository",
+			"repositoryPackage": "it.water.infrastructure.apigateway.repository",
+			"springRepository": true,
+			"servicePackagePath": "/src/main/java/it/water/infrastructure/apigateway/service",
+			"servicePackage": "it.water.infrastructure.apigateway.service",
+			"serviceRestPackagePath": "/src/main/java/it/water/infrastructure/apigateway/service/rest",
+			"serviceRestPackage": "it.water.infrastructure.apigateway.service.rest",
+			"testPackage": "it.water.infrastructure.apigateway",
+			"publishModule": true,
+			"publishRepoName": "public-water-repository",
+			"publishRepoUrl": "https://nexus.acsoftware.it/nexus/repository/maven-water/",
+			"publishRepoHasCredentials": true,
+			"entities": [
+						{
+									"modelName": "Route",
+									"isProtectedEntity": true,
+									"isOwnedEntity": true
+						},
+						{
+									"modelName": "RateLimitRule",
+									"isProtectedEntity": true,
+									"isOwnedEntity": true
+						}
+			],
+			"parent-project": true
+}
+}

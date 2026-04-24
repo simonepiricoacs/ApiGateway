@@ -46,7 +46,7 @@ public class RouteRepositoryImpl extends WaterJpaRepositoryImpl<Route> implement
     @Override
     public List<Route> findByEnabled(boolean enabled) {
         log.debug("Finding routes by enabled: {}", enabled);
-        Query query = getQueryBuilderInstance().createQueryFilter("enabled=" + enabled);
+        Query query = getQueryBuilderInstance().field("enabled").equalTo(enabled);
         return findAll(-1, 1, query, null).getResults().stream().toList();
     }
 

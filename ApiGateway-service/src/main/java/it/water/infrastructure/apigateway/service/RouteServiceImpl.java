@@ -1,12 +1,13 @@
 package it.water.infrastructure.apigateway.service;
 
+import it.water.core.api.registry.ComponentRegistry;
+import it.water.core.interceptors.annotations.FrameworkComponent;
+import it.water.core.interceptors.annotations.Inject;
+import it.water.infrastructure.apigateway.api.GatewayRouterApi;
 import it.water.infrastructure.apigateway.api.RouteApi;
 import it.water.infrastructure.apigateway.api.RouteRepository;
 import it.water.infrastructure.apigateway.api.RouteSystemApi;
 import it.water.infrastructure.apigateway.model.Route;
-import it.water.core.api.registry.ComponentRegistry;
-import it.water.core.interceptors.annotations.FrameworkComponent;
-import it.water.core.interceptors.annotations.Inject;
 import it.water.repository.service.BaseEntityServiceImpl;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,6 +34,11 @@ public class RouteServiceImpl extends BaseEntityServiceImpl<Route> implements Ro
     @Getter
     @Setter
     private ComponentRegistry componentRegistry;
+
+    @Inject
+    @Getter
+    @Setter
+    private GatewayRouterApi gatewayRouterApi;
 
     public RouteServiceImpl() {
         super(Route.class);
@@ -62,7 +68,10 @@ public class RouteServiceImpl extends BaseEntityServiceImpl<Route> implements Ro
     @Override
     public void refreshRoutes() {
         getLog().debug("Refreshing routes from database");
-        // Routes are loaded fresh from DB on each call to getActiveRoutes
-        // This method can trigger cache refresh in GatewayRouterApi
+        if (gatewayRouterApi != null) {
+            gatewayRouterApi.refreshRoutes();
+        } else {
+            getLog().warn("GatewayRouterApi not available, skipping router refresh");
+        }
     }
 }

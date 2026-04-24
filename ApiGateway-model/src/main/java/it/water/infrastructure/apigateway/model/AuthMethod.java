@@ -1,8 +1,12 @@
 package it.water.infrastructure.apigateway.model;
 
 /**
- * Authentication methods supported by the API Gateway.
+ * Authentication methods reserved for the future gateway-authentication layer.
  */
 public enum AuthMethod {
-    JWT_VALIDATION, API_KEY, OAUTH2, BASIC_AUTH, PASSTHROUGH
+    JWT_VALIDATION,
+    API_KEY,
+    OAUTH2,
+    BASIC_AUTH,
+    PASSTHROUGH
 }

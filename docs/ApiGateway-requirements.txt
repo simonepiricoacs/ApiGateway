@@ -146,23 +146,6 @@ ApiGateway/
    - GatewayRequest transformRequest(GatewayRequest request, Route route)
    - GatewayResponse transformResponse(GatewayResponse response, Route route)
 
-6. AUTHENTICATION GATEWAY (GatewayAuthenticationApi)
---------------------------------------------------------------------------------
-   Interface: it.water.apigateway.api.GatewayAuthenticationApi
-
-   Supported Methods:
-   - JWT_VALIDATION: Validate JWT tokens
-   - API_KEY: Validate API keys against registry
-   - OAUTH2: OAuth2 token introspection
-   - BASIC_AUTH: Basic authentication (for legacy systems)
-   - PASSTHROUGH: Forward auth headers to backend
-
-   Methods:
-   - AuthResult authenticate(GatewayRequest request)
-   - void registerApiKey(String apiKey, ApiKeyConfig config)
-   - void revokeApiKey(String apiKey)
-   - boolean validateApiKey(String apiKey)
-
 ================================================================================
                            DOMAIN MODELS
 ================================================================================
@@ -324,12 +307,6 @@ water.gateway.ratelimit.enabled=true
 water.gateway.ratelimit.defaultAlgorithm=TOKEN_BUCKET
 water.gateway.ratelimit.defaultMaxRequests=1000
 water.gateway.ratelimit.defaultWindowSeconds=60
-
-# Security
-water.gateway.security.jwtValidation=true
-water.gateway.security.apiKeyEnabled=true
-water.gateway.security.corsEnabled=true
-water.gateway.security.corsAllowedOrigins=*
 
 # Metrics & Logging
 water.gateway.metrics.enabled=true

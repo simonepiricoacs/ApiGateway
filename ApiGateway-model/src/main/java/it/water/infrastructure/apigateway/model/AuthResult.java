@@ -1,11 +1,15 @@
 package it.water.infrastructure.apigateway.model;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
 
 /**
- * Result of an authentication check.
+ * Result of a reserved gateway-authentication check.
  */
 @Getter
 @Setter

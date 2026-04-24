@@ -39,7 +39,7 @@ public class RateLimitRuleRepositoryImpl extends WaterJpaRepositoryImpl<RateLimi
     @Override
     public List<RateLimitRule> findByEnabled(boolean enabled) {
         log.debug("Finding rate limit rules by enabled: {}", enabled);
-        Query query = getQueryBuilderInstance().createQueryFilter("enabled=" + enabled);
+        Query query = getQueryBuilderInstance().field("enabled").equalTo(enabled);
         return findAll(-1, 1, query, null).getResults().stream().toList();
     }
 }

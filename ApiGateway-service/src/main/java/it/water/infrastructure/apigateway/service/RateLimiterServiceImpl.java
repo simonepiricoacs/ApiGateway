@@ -1,9 +1,13 @@
 package it.water.infrastructure.apigateway.service;
 
 import it.water.infrastructure.apigateway.api.RateLimiterApi;
+import it.water.infrastructure.apigateway.api.options.GatewaySystemOptions;
 import it.water.infrastructure.apigateway.model.*;
 import it.water.core.interceptors.annotations.FrameworkComponent;
 import it.water.core.api.interceptors.OnActivate;
+import it.water.core.api.interceptors.OnDeactivate;
+import it.water.core.interceptors.annotations.Inject;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,8 +23,13 @@ import java.util.concurrent.atomic.AtomicLong;
 public class RateLimiterServiceImpl implements RateLimiterApi {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimiterServiceImpl.class);
+    private static final String DEFAULT_RULE_ID = "__default_rate_limit__";
 
     private final Map<String, RateLimitRule> rules = new ConcurrentHashMap<>();
+
+    @Inject
+    @Setter
+    private GatewaySystemOptions gatewaySystemOptions;
 
     // Token bucket state per key
     private static class TokenBucket {
@@ -76,10 +85,22 @@ public class RateLimiterServiceImpl implements RateLimiterApi {
         log.info("RateLimiterServiceImpl activated");
     }
 
+    @OnDeactivate
+    public void deactivate() {
+        log.info("RateLimiterServiceImpl deactivating: clearing rate limiter state ({} sliding windows, {} fixed windows, {} token buckets)",
+                slidingWindows.size(), fixedWindows.size(), tokenBuckets.size());
+        slidingWindows.clear();
+        fixedWindows.clear();
+        tokenBuckets.clear();
+    }
+
     @Override
     public RateLimitResult checkRateLimit(String key, GatewayRequest request) {
+        RateLimitRule defaultRule = getDefaultRule();
         if (rules.isEmpty()) {
-            return RateLimitResult.builder().allowed(true).remaining(Integer.MAX_VALUE).resetAfterMs(0).build();
+            return defaultRule != null
+                    ? applyRule(key, defaultRule)
+                    : RateLimitResult.builder().allowed(true).remaining(Integer.MAX_VALUE).resetAfterMs(0).build();
         }
         // Apply first matching rule
         for (RateLimitRule rule : rules.values()) {
@@ -88,7 +109,9 @@ public class RateLimiterServiceImpl implements RateLimiterApi {
                 return applyRule(key, rule);
             }
         }
-        return RateLimitResult.builder().allowed(true).remaining(Integer.MAX_VALUE).resetAfterMs(0).build();
+        return defaultRule != null
+                ? applyRule(key, defaultRule)
+                : RateLimitResult.builder().allowed(true).remaining(Integer.MAX_VALUE).resetAfterMs(0).build();
     }
 
     @Override
@@ -193,5 +216,24 @@ public class RateLimiterServiceImpl implements RateLimiterApi {
                     .rule(rule)
                     .build();
         }
+    }
+
+    private RateLimitRule getDefaultRule() {
+        if (gatewaySystemOptions == null) {
+            return null;
+        }
+        int rpm = gatewaySystemOptions.getDefaultRateLimiterRequestsPerMinute();
+        if (rpm <= 0) {
+            return null;
+        }
+        RateLimitRule defaultRule = new RateLimitRule(
+                DEFAULT_RULE_ID,
+                RateLimitKeyType.CLIENT_IP,
+                rpm,
+                60,
+                RateLimitAlgorithm.TOKEN_BUCKET);
+        defaultRule.setBurstCapacity(rpm);
+        defaultRule.setEnabled(true);
+        return defaultRule;
     }
 }

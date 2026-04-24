@@ -1,0 +1,25 @@
+Bundle-Name: ApiGateway Service Bundle
+Bundle-SymbolicName: ApiGateway
+Bundle-Activator: it.water.implementation.osgi.bundle.WaterBundleActivator
+Import-Package: \
+    org.osgi.framework.*,\
+    org.osgi.service.*,\
+    org.osgi.util.*,\
+    org.slf4j.*,\
+    org.apache.aries.jpa.*,\
+    org.apache.aries.cdi.*,\
+    javassist.util.proxy,\
+    jakarta.validation,\
+    jakarta.validation.*,\
+    jakarta.persistence,\
+    jakarta.transaction,\
+    jakarta.enterprise.*,\
+    it.water.core.*,\
+    it.water.repository.*,\
+    it.water.service.discovery.*,\
+    it.water.service.rest.*,\
+    it.water.implementation.osgi.*
+Export-Package: \
+    it.water.infrastructure.apigateway.*
+DynamicImport-Package: *
+-cdiannotations: *;discover=annotated_by_bean

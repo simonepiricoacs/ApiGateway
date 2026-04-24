@@ -1,25 +1,33 @@
 package it.water.infrastructure.apigateway;
 
-import it.water.infrastructure.apigateway.api.CircuitBreakerApi;
-import it.water.infrastructure.apigateway.api.GatewaySystemApi;
-import it.water.infrastructure.apigateway.model.CircuitBreakerConfig;
-import it.water.infrastructure.apigateway.model.ServiceStats;
-import it.water.infrastructure.apigateway.service.GatewaySystemServiceImpl;
+import com.sun.net.httpserver.HttpServer;
+import it.water.core.api.bundle.ApplicationProperties;
 import it.water.core.api.registry.ComponentRegistry;
 import it.water.core.api.service.Service;
 import it.water.core.interceptors.annotations.Inject;
 import it.water.core.testing.utils.junit.WaterTestExtension;
 import it.water.core.testing.utils.runtime.TestRuntimeUtils;
+import it.water.infrastructure.apigateway.api.CircuitBreakerApi;
+import it.water.infrastructure.apigateway.api.GatewaySystemApi;
+import it.water.infrastructure.apigateway.model.CircuitBreakerConfig;
+import it.water.infrastructure.apigateway.model.ServiceStats;
+import it.water.infrastructure.apigateway.service.GatewaySystemServiceImpl;
+import it.water.service.discovery.api.ServiceRegistrationApi;
 import it.water.service.discovery.model.ServiceRegistration;
 import it.water.service.discovery.model.ServiceStatus;
 import lombok.Setter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Unit tests for GatewaySystemServiceImpl covering service discovery integration,
@@ -42,6 +50,10 @@ class GatewaySystemApiTest implements Service {
     @Setter
     private CircuitBreakerApi circuitBreakerApi;
 
+    @Inject
+    @Setter
+    private ApplicationProperties applicationProperties;
+
     @BeforeAll
     void beforeAll() {
         TestRuntimeUtils.impersonateAdmin(componentRegistry);
@@ -55,8 +67,10 @@ class GatewaySystemApiTest implements Service {
 
     @Test
     @Order(2)
-    void syncWithServiceDiscoveryDoesNotThrow() {
-        Assertions.assertDoesNotThrow(() -> gatewaySystemApi.syncWithServiceDiscovery());
+    void syncWithServiceDiscoveryFailsWhenNoDiscoveryIsAvailable() {
+        IllegalStateException error = Assertions.assertThrows(IllegalStateException.class,
+                () -> gatewaySystemApi.syncWithServiceDiscovery());
+        Assertions.assertTrue(error.getMessage().contains("ServiceDiscovery sync failed"));
     }
 
     @Test
@@ -132,8 +146,7 @@ class GatewaySystemApiTest implements Service {
     @Test
     @Order(9)
     void evictServiceAfterSyncRemovesFromCache() {
-        // sync first (may or may not populate cache depending on service discovery availability)
-        gatewaySystemApi.syncWithServiceDiscovery();
+        Assertions.assertThrows(IllegalStateException.class, () -> gatewaySystemApi.syncWithServiceDiscovery());
         // evict a service - should not throw even if not cached
         Assertions.assertDoesNotThrow(() -> gatewaySystemApi.evictServiceFromCache("any-service-gst"));
     }
@@ -150,6 +163,126 @@ class GatewaySystemApiTest implements Service {
 
     @Test
     @Order(11)
+    void syncWithServiceDiscoveryFallsBackToRemoteHttpWhenLocalServiceIsMissing() throws Exception {
+        GatewaySystemServiceImpl impl = resolveImpl();
+        if (impl == null) {
+            return;
+        }
+        ServiceRegistrationApi originalApi = impl.getServiceRegistrationApi();
+        HttpServer httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        Properties props = new Properties();
+        AtomicReference<String> requestedPath = new AtomicReference<>();
+        httpServer.createContext("/water/internal/serviceregistration/available", exchange -> {
+            requestedPath.set(exchange.getRequestURI().getPath());
+            byte[] body = ("[" +
+                    "{\"serviceName\":\"remote-sync-svc\",\"serviceVersion\":\"1.0.0\"," +
+                    "\"instanceId\":\"remote-sync-1\",\"endpoint\":\"http://127.0.0.1:19001\"," +
+                    "\"protocol\":\"http\",\"status\":\"UP\"}," +
+                    "{\"serviceName\":\"remote-sync-svc\",\"serviceVersion\":\"1.0.0\"," +
+                    "\"instanceId\":\"remote-sync-2\",\"endpoint\":\"http://127.0.0.1:19002\"," +
+                    "\"protocol\":\"http\",\"status\":\"DOWN\"}" +
+                    "]")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(body);
+            }
+        });
+        httpServer.start();
+        try {
+            impl.setServiceRegistrationApi(null);
+            props.setProperty("water.apigateway.service.discovery.url", "http://127.0.0.1:" + httpServer.getAddress().getPort());
+            applicationProperties.loadProperties(props);
+
+            gatewaySystemApi.syncWithServiceDiscovery();
+
+            List<ServiceRegistration> healthy = gatewaySystemApi.getHealthyInstances("remote-sync-svc");
+            List<ServiceRegistration> cached = impl.getCachedInstances("remote-sync-svc");
+            Assertions.assertNotNull(healthy);
+            Assertions.assertNotNull(cached);
+            Assertions.assertEquals("/water/internal/serviceregistration/available", requestedPath.get());
+            Assertions.assertEquals(2, cached.size());
+            Assertions.assertEquals(1, healthy.size());
+            Assertions.assertEquals("remote-sync-1", healthy.get(0).getInstanceId());
+        } finally {
+            applicationProperties.unloadProperties(props);
+            impl.setServiceRegistrationApi(originalApi);
+            gatewaySystemApi.evictServiceFromCache("remote-sync-svc");
+            httpServer.stop(0);
+        }
+    }
+
+    @Test
+    @Order(12)
+    void syncWithServiceDiscoveryRaisesErrorWhenRemoteSyncFails() throws Exception {
+        GatewaySystemServiceImpl impl = resolveImpl();
+        if (impl == null) {
+            return;
+        }
+        ServiceRegistrationApi originalApi = impl.getServiceRegistrationApi();
+        HttpServer httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        httpServer.createContext("/water/internal/serviceregistration/available", exchange -> {
+            byte[] body = "{\"error\":\"boom\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(500, body.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(body);
+            }
+        });
+        httpServer.start();
+        Properties props = new Properties();
+        props.setProperty("water.apigateway.service.discovery.url", "http://127.0.0.1:" + httpServer.getAddress().getPort());
+        try {
+            impl.setServiceRegistrationApi(null);
+            applicationProperties.loadProperties(props);
+
+            IllegalStateException error = Assertions.assertThrows(IllegalStateException.class,
+                    () -> gatewaySystemApi.syncWithServiceDiscovery());
+            Assertions.assertTrue(error.getMessage().contains("ServiceDiscovery sync failed"));
+        } finally {
+            applicationProperties.unloadProperties(props);
+            impl.setServiceRegistrationApi(originalApi);
+            httpServer.stop(0);
+        }
+    }
+
+    @Test
+    @Order(13)
+    void refreshServiceCacheReplacesCacheAtomically() throws Exception {
+        GatewaySystemServiceImpl impl = resolveImpl();
+        if (impl == null) {
+            return;
+        }
+        if (!injectCachedInstances(impl, "old-svc", new ServiceRegistration("old-svc", "1.0", "old-1",
+                "http://localhost:18082", "http", ServiceStatus.UP))) {
+            return;
+        }
+        Field refreshMethodFieldProbe = GatewaySystemServiceImpl.class.getDeclaredField("serviceCache");
+        refreshMethodFieldProbe.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, List<ServiceRegistration>> previousCache =
+                (Map<String, List<ServiceRegistration>>) refreshMethodFieldProbe.get(impl);
+
+        var refreshMethod = GatewaySystemServiceImpl.class.getDeclaredMethod("refreshServiceCache", List.class);
+        refreshMethod.setAccessible(true);
+        List<ServiceRegistration> refreshedServices = List.of(
+                new ServiceRegistration("new-svc", "1.0", "new-1", "http://localhost:18083", "http", ServiceStatus.UP),
+                new ServiceRegistration("new-svc", "1.0", "new-2", "http://localhost:18084", "http", ServiceStatus.DOWN)
+        );
+
+        refreshMethod.invoke(impl, refreshedServices);
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<ServiceRegistration>> currentCache =
+                (Map<String, List<ServiceRegistration>>) refreshMethodFieldProbe.get(impl);
+        Assertions.assertNotSame(previousCache, currentCache);
+        Assertions.assertFalse(currentCache.containsKey("old-svc"));
+        Assertions.assertEquals(2, currentCache.get("new-svc").size());
+    }
+
+    @Test
+    @Order(14)
     void getHealthyInstancesFiltersDownInstances() {
         GatewaySystemServiceImpl impl = resolveImpl();
         if (impl == null) {
@@ -167,7 +300,7 @@ class GatewaySystemApiTest implements Service {
     }
 
     @Test
-    @Order(12)
+    @Order(15)
     void getHealthyInstancesFiltersOpenCircuitInstances() {
         GatewaySystemServiceImpl impl = resolveImpl();
         if (impl == null) {

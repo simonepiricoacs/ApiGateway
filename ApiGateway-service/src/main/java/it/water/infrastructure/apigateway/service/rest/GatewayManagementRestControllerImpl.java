@@ -1,17 +1,19 @@
 package it.water.infrastructure.apigateway.service.rest;
 
+import it.water.core.api.service.rest.FrameworkRestController;
+import it.water.core.interceptors.annotations.Inject;
 import it.water.infrastructure.apigateway.api.GatewaySystemApi;
 import it.water.infrastructure.apigateway.api.rest.GatewayManagementRestApi;
 import it.water.infrastructure.apigateway.model.CircuitState;
 import it.water.infrastructure.apigateway.model.ServiceStats;
-import it.water.core.api.service.rest.FrameworkRestController;
-import it.water.core.interceptors.annotations.Inject;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 /**
  * REST controller for gateway management operations.
@@ -51,8 +53,17 @@ public class GatewayManagementRestControllerImpl implements GatewayManagementRes
     }
 
     @Override
-    public void syncServiceDiscovery() {
+    public Response syncServiceDiscovery() {
         log.info("REST: triggering ServiceDiscovery sync");
-        gatewaySystemApi.syncWithServiceDiscovery();
+        try {
+            gatewaySystemApi.syncWithServiceDiscovery();
+            return Response.noContent().build();
+        } catch (Exception e) {
+            log.error("REST: ServiceDiscovery sync failed: {}", e.getMessage(), e);
+            return Response.status(502)
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(Map.of("error", e.getMessage() == null ? "" : e.getMessage()))
+                    .build();
+        }
     }
 }

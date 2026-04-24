@@ -1,9 +1,12 @@
 package it.water.infrastructure.apigateway.service;
 
-import it.water.infrastructure.apigateway.api.GatewayAuthenticationApi;
-import it.water.infrastructure.apigateway.model.*;
-import it.water.core.interceptors.annotations.FrameworkComponent;
 import it.water.core.api.interceptors.OnActivate;
+import it.water.core.interceptors.annotations.FrameworkComponent;
+import it.water.infrastructure.apigateway.api.GatewayAuthenticationApi;
+import it.water.infrastructure.apigateway.model.ApiKeyConfig;
+import it.water.infrastructure.apigateway.model.AuthMethod;
+import it.water.infrastructure.apigateway.model.AuthResult;
+import it.water.infrastructure.apigateway.model.GatewayRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,8 +18,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Gateway authentication service implementation.
- * Supports JWT, API_KEY, BASIC_AUTH, PASSTHROUGH, and OAuth2 (stub).
+ * Reserved gateway authentication component.
+ *
+ * <p>The current gateway proxy path is protected by Water REST security
+ * annotations and does not call this component. It is kept as a future extension
+ * point for gateway-specific authentication, but JWT validation is deliberately
+ * fail-closed until this class delegates to the real Water JwtTokenService.
  */
 @FrameworkComponent
 public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationApi {
@@ -27,12 +34,11 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
 
     @OnActivate
     public void activate() {
-        log.info("GatewayAuthenticationServiceImpl activated");
+        log.info("GatewayAuthenticationServiceImpl activated as reserved auth component");
     }
 
     @Override
     public AuthResult authenticate(GatewayRequest request) {
-        // Check X-API-KEY header first (no Authorization header required)
         String apiKeyHeader = request.getHeaders().get("X-API-KEY");
         if (apiKeyHeader != null) {
             return authenticateApiKey(apiKeyHeader);
@@ -44,7 +50,7 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
         }
 
         if (authHeader.startsWith("Bearer ")) {
-            return authenticateJwt(authHeader.substring(7));
+            return authenticateJwt();
         }
         if (authHeader.startsWith("Basic ")) {
             return authenticateBasic(authHeader.substring(6));
@@ -55,54 +61,28 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
 
     @Override
     public void registerApiKey(String apiKey, ApiKeyConfig config) {
-        log.info("Registering API key: {}", apiKey);
+        log.info("Registering reserved API key: {}", apiKey);
         apiKeys.put(apiKey, config);
     }
 
     @Override
     public void revokeApiKey(String apiKey) {
-        log.info("Revoking API key: {}", apiKey);
+        log.info("Revoking reserved API key: {}", apiKey);
         apiKeys.remove(apiKey);
     }
 
     @Override
     public boolean validateApiKey(String apiKey) {
         ApiKeyConfig config = apiKeys.get(apiKey);
-        if (config == null || !config.isEnabled()) return false;
-        if (config.getExpiresAt() != null && config.getExpiresAt().before(new Date())) return false;
-        return true;
+        if (config == null || !config.isEnabled()) {
+            return false;
+        }
+        return config.getExpiresAt() == null || !config.getExpiresAt().before(new Date());
     }
 
-    private AuthResult authenticateJwt(String token) {
-        try {
-            // Minimal JWT structure check (payload decode)
-            String[] parts = token.split("\\.");
-            if (parts.length != 3) {
-                log.debug("Invalid JWT format");
-                return buildUnauthenticated(AuthMethod.JWT_VALIDATION);
-            }
-            // In production, integrate with Water JwtTokenService
-            // Here we do a structural check and extract subject from payload
-            String payload = new String(Base64.getUrlDecoder().decode(padBase64(parts[1])), StandardCharsets.UTF_8);
-            // Check exp if present (simplified)
-            if (payload.contains("\"exp\"")) {
-                long exp = extractLong(payload, "exp");
-                if (exp > 0 && exp < System.currentTimeMillis() / 1000) {
-                    log.debug("JWT token expired");
-                    return buildUnauthenticated(AuthMethod.JWT_VALIDATION);
-                }
-            }
-            String sub = extractString(payload, "sub");
-            return AuthResult.builder()
-                    .authenticated(true)
-                    .userId(sub)
-                    .roles(Collections.emptyList())
-                    .method(AuthMethod.JWT_VALIDATION)
-                    .build();
-        } catch (Exception e) {
-            log.debug("JWT validation failed: {}", e.getMessage());
-            return buildUnauthenticated(AuthMethod.JWT_VALIDATION);
-        }
+    private AuthResult authenticateJwt() {
+        log.debug("JWT authentication is disabled until integrated with Water JwtTokenService");
+        return buildUnauthenticated(AuthMethod.JWT_VALIDATION);
     }
 
     private AuthResult authenticateBasic(String encoded) {
@@ -125,7 +105,6 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
 
     private AuthResult authenticateApiKey(String apiKey) {
         if (validateApiKey(apiKey)) {
-            ApiKeyConfig config = apiKeys.get(apiKey);
             return AuthResult.builder()
                     .authenticated(true)
                     .userId("apikey:" + apiKey)
@@ -143,38 +122,5 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
                 .method(method)
                 .roles(Collections.emptyList())
                 .build();
-    }
-
-    private String padBase64(String base64) {
-        int padding = 4 - base64.length() % 4;
-        if (padding < 4) {
-            return base64 + "=".repeat(padding);
-        }
-        return base64;
-    }
-
-    private String extractString(String json, String key) {
-        String search = "\"" + key + "\":\"";
-        int start = json.indexOf(search);
-        if (start < 0) return null;
-        start += search.length();
-        int end = json.indexOf("\"", start);
-        return end > start ? json.substring(start, end) : null;
-    }
-
-    private long extractLong(String json, String key) {
-        String search = "\"" + key + "\":";
-        int start = json.indexOf(search);
-        if (start < 0) return -1;
-        start += search.length();
-        int end = start;
-        while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) {
-            end++;
-        }
-        try {
-            return Long.parseLong(json.substring(start, end));
-        } catch (NumberFormatException e) {
-            return -1;
-        }
     }
 }

@@ -1,12 +1,17 @@
 package it.water.infrastructure.apigateway.model;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.Date;
 import java.util.List;
 
 /**
- * Configuration for an API key.
+ * Reserved API-key configuration model for the future gateway-authentication
+ * layer. It is not used by the current proxy routing path.
  */
 @Getter
 @Setter

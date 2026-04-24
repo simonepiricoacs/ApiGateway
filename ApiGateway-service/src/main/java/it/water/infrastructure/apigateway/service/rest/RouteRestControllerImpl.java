@@ -1,11 +1,11 @@
 package it.water.infrastructure.apigateway.service.rest;
 
-import it.water.infrastructure.apigateway.api.RouteApi;
-import it.water.infrastructure.apigateway.api.rest.RouteRestApi;
-import it.water.infrastructure.apigateway.model.Route;
 import it.water.core.api.service.BaseEntityApi;
 import it.water.core.api.service.rest.FrameworkRestController;
 import it.water.core.interceptors.annotations.Inject;
+import it.water.infrastructure.apigateway.api.RouteApi;
+import it.water.infrastructure.apigateway.api.rest.RouteRestApi;
+import it.water.infrastructure.apigateway.model.Route;
 import it.water.service.rest.persistence.BaseEntityRestApi;
 import lombok.Setter;
 import org.slf4j.Logger;
@@ -27,6 +27,26 @@ public class RouteRestControllerImpl extends BaseEntityRestApi<Route> implements
     @Override
     protected BaseEntityApi<Route> getEntityService() {
         return routeApi;
+    }
+
+    @Override
+    public Route save(Route entity) {
+        Route saved = super.save(entity);
+        routeApi.refreshRoutes();
+        return saved;
+    }
+
+    @Override
+    public Route update(Route entity) {
+        Route updated = super.update(entity);
+        routeApi.refreshRoutes();
+        return updated;
+    }
+
+    @Override
+    public void remove(long id) {
+        super.remove(id);
+        routeApi.refreshRoutes();
     }
 
     @Override

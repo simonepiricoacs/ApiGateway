@@ -1,5 +1,6 @@
 package it.water.infrastructure.apigateway;
 
+import it.water.core.api.bundle.ApplicationProperties;
 import it.water.infrastructure.apigateway.api.CircuitBreakerApi;
 import it.water.infrastructure.apigateway.model.CircuitBreakerConfig;
 import it.water.infrastructure.apigateway.model.CircuitState;
@@ -11,6 +12,8 @@ import it.water.core.testing.utils.runtime.TestRuntimeUtils;
 import lombok.Setter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
+
+import java.util.Properties;
 
 /**
  * Unit tests for Circuit Breaker service.
@@ -27,6 +30,10 @@ class CircuitBreakerApiTest implements Service {
     @Inject
     @Setter
     private CircuitBreakerApi circuitBreakerApi;
+
+    @Inject
+    @Setter
+    private ApplicationProperties applicationProperties;
 
     @BeforeAll
     void beforeAll() {
@@ -192,5 +199,21 @@ class CircuitBreakerApiTest implements Service {
         Assertions.assertDoesNotThrow(() -> circuitBreakerApi.recordSuccess("svc-open-success", "inst-1"));
         // Circuit should still be OPEN (timeout=60s has not passed)
         Assertions.assertEquals(CircuitState.OPEN, circuitBreakerApi.getState("svc-open-success", "inst-1"));
+    }
+
+    @Test
+    @Order(12)
+    void defaultConfigReadsFailureThresholdAndTimeoutFromProperties() {
+        Properties props = new Properties();
+        props.setProperty("water.apigateway.circuit.breaker.failure.threshold", "7");
+        props.setProperty("water.apigateway.circuit.breaker.timeout.ms", "4500");
+        try {
+            applicationProperties.loadProperties(props);
+            CircuitBreakerConfig config = circuitBreakerApi.getConfig("svc-props");
+            Assertions.assertEquals(7, config.getFailureThreshold());
+            Assertions.assertEquals(5, config.getTimeoutSeconds());
+        } finally {
+            applicationProperties.unloadProperties(props);
+        }
     }
 }

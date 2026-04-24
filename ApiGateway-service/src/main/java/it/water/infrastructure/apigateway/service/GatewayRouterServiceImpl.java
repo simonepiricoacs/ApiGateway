@@ -1,10 +1,12 @@
 package it.water.infrastructure.apigateway.service;
 
-import it.water.infrastructure.apigateway.api.*;
-import it.water.infrastructure.apigateway.model.*;
+import it.water.core.api.interceptors.OnActivate;
+import it.water.core.api.interceptors.OnDeactivate;
 import it.water.core.interceptors.annotations.FrameworkComponent;
 import it.water.core.interceptors.annotations.Inject;
-import it.water.core.api.interceptors.OnActivate;
+import it.water.infrastructure.apigateway.api.*;
+import it.water.infrastructure.apigateway.api.options.GatewaySystemOptions;
+import it.water.infrastructure.apigateway.model.*;
 import it.water.service.discovery.model.ServiceRegistration;
 import lombok.Getter;
 import lombok.Setter;
@@ -35,6 +37,10 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
             "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
             "te", "trailer", "transfer-encoding", "upgrade"
     );
+    private static final Set<String> RESPONSE_HEADERS_TO_SKIP = Set.of(
+            "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+            "te", "trailer", "transfer-encoding", "upgrade", "content-length"
+    );
 
     @Inject
     @Getter
@@ -54,11 +60,6 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
     @Inject
     @Getter
     @Setter
-    private GatewayAuthenticationApi gatewayAuthenticationApi;
-
-    @Inject
-    @Getter
-    @Setter
     private RequestTransformerApi requestTransformerApi;
 
     @Inject
@@ -69,24 +70,48 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
     @Inject
     @Getter
     @Setter
+    private GatewaySystemOptions gatewaySystemOptions;
+
+    @Inject
+    @Getter
+    @Setter
     private RouteRepository routeRepository;
 
     private volatile List<Route> activeRoutes = new CopyOnWriteArrayList<>();
     private final ConcurrentHashMap<String, Pattern> routePatternCache = new ConcurrentHashMap<>();
+    private volatile boolean routesInitialized;
     private HttpClient httpClient;
 
     @OnActivate
-    public void activate() {
+    public void activate(RouteRepository routeRepository, GatewaySystemApi gatewaySystemApi) {
         log.info("GatewayRouterServiceImpl activating...");
+        this.routeRepository = routeRepository;
+        this.gatewaySystemApi = gatewaySystemApi;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
-        refreshRoutes();
+        if (this.routeRepository != null) {
+            refreshRoutes();
+        } else {
+            log.warn("RouteRepository not available during activation, routes will be loaded lazily");
+        }
         log.info("GatewayRouterServiceImpl activated with {} routes", activeRoutes.size());
+    }
+
+    @OnDeactivate
+    public void deactivate() {
+        log.info("GatewayRouterServiceImpl deactivating: releasing HTTP client and clearing route caches");
+        // HttpClient is not AutoCloseable on Java 17; dereferencing lets the GC close
+        // its internal selector/executor threads once the component is unloaded.
+        this.httpClient = null;
+        this.routePatternCache.clear();
+        this.activeRoutes = new CopyOnWriteArrayList<>();
+        this.routesInitialized = false;
     }
 
     @Override
     public GatewayResponse route(GatewayRequest request) {
+        ensureRoutesLoaded();
         log.debug("Routing request: {} {}", request.getMethod(), request.getPath());
 
         RouteResult routeResult = resolveRoute(request);
@@ -144,6 +169,7 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
 
     @Override
     public RouteResult resolveRoute(GatewayRequest request) {
+        ensureRoutesLoaded();
         List<Route> routes = activeRoutes;
         for (Route route : routes) {
             if (!route.isEnabled()) continue;
@@ -152,7 +178,11 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
                 List<ServiceRegistration> instances = gatewaySystemApi.getHealthyInstances(route.getTargetServiceName());
                 if (instances.isEmpty()) {
                     // Try cache refresh
-                    gatewaySystemApi.syncWithServiceDiscovery();
+                    try {
+                        gatewaySystemApi.syncWithServiceDiscovery();
+                    } catch (Exception e) {
+                        log.warn("Failed to refresh ServiceDiscovery cache while resolving route {}: {}", route.getRouteId(), e.getMessage());
+                    }
                     instances = gatewaySystemApi.getHealthyInstances(route.getTargetServiceName());
                 }
                 ServiceRegistration instance = instances.isEmpty() ? null :
@@ -170,12 +200,18 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
 
     @Override
     public List<Route> getActiveRoutes() {
+        ensureRoutesLoaded();
         return Collections.unmodifiableList(activeRoutes);
     }
 
     @Override
     public void refreshRoutes() {
         log.info("Refreshing routes from database");
+        if (routeRepository == null) {
+            routesInitialized = false;
+            log.warn("Failed to refresh routes: RouteRepository is not available");
+            return;
+        }
         try {
             List<Route> newRoutes = routeRepository.findOrderedByPriority();
             List<Route> sortedRoutes = newRoutes.stream()
@@ -183,12 +219,14 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
                     .toList();
             activeRoutes = new CopyOnWriteArrayList<>(sortedRoutes);
             routePatternCache.clear();
+            routesInitialized = true;
             // Also sync service discovery
             if (gatewaySystemApi != null) {
                 gatewaySystemApi.syncWithServiceDiscovery();
             }
             log.info("Loaded {} routes", activeRoutes.size());
         } catch (Exception e) {
+            routesInitialized = false;
             log.warn("Failed to refresh routes: {}", e.getMessage());
         }
     }
@@ -201,6 +239,7 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
         updated.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
         activeRoutes = new CopyOnWriteArrayList<>(updated);
         routePatternCache.remove(route.getPathPattern());
+        routesInitialized = true;
     }
 
     @Override
@@ -209,6 +248,13 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
         List<Route> updated = new ArrayList<>(activeRoutes);
         updated.removeIf(r -> routeId.equals(r.getRouteId()));
         activeRoutes = new CopyOnWriteArrayList<>(updated);
+        routesInitialized = true;
+    }
+
+    private void ensureRoutesLoaded() {
+        if (!routesInitialized && routeRepository != null) {
+            refreshRoutes();
+        }
     }
 
     private boolean matchesRoute(GatewayRequest request, Route route) {
@@ -236,7 +282,7 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
 
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
-                .timeout(Duration.ofSeconds(30));
+                .timeout(Duration.ofMillis(resolveProxyTimeoutMs()));
 
         // Copy headers (excluding hop-by-hop)
         request.getHeaders().forEach((name, value) -> {
@@ -269,7 +315,9 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
 
         Map<String, String> responseHeaders = new HashMap<>();
         response.headers().map().forEach((name, values) -> {
-            if (!values.isEmpty()) responseHeaders.put(name, values.get(0));
+            if (!values.isEmpty() && !RESPONSE_HEADERS_TO_SKIP.contains(name.toLowerCase())) {
+                responseHeaders.put(name, values.get(0));
+            }
         });
 
         return GatewayResponse.builder()
@@ -282,12 +330,31 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
     private String buildTargetUrl(ServiceRegistration instance, GatewayRequest request) {
         String endpoint = instance.getEndpoint();
         String path = request.getPath() != null ? request.getPath() : "";
+        if ("/".equals(path)) {
+            path = "";
+        }
+        String endpointPath = extractPath(endpoint);
+        if (!path.isEmpty() && !endpointPath.isEmpty() && endpointPath.endsWith(path)) {
+            path = "";
+        }
         String query = request.getQueryString() != null && !request.getQueryString().isEmpty()
                 ? "?" + request.getQueryString() : "";
         if (endpoint.endsWith("/") && path.startsWith("/")) {
             endpoint = endpoint.substring(0, endpoint.length() - 1);
         }
         return endpoint + path + query;
+    }
+
+    private String extractPath(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            return "";
+        }
+        try {
+            String path = URI.create(endpoint).getPath();
+            return path == null ? "" : path;
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private GatewayResponse buildErrorResponse(int statusCode, String message) {
@@ -297,5 +364,12 @@ public class GatewayRouterServiceImpl implements GatewayRouterApi {
                 .body(body)
                 .headers(Map.of("Content-Type", "text/plain"))
                 .build();
+    }
+
+    private long resolveProxyTimeoutMs() {
+        if (gatewaySystemOptions == null) {
+            return 30000L;
+        }
+        return gatewaySystemOptions.getProxyTimeoutMs();
     }
 }

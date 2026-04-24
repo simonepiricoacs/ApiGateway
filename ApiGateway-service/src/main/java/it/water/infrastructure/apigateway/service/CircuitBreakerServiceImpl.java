@@ -1,10 +1,14 @@
 package it.water.infrastructure.apigateway.service;
 
 import it.water.infrastructure.apigateway.api.CircuitBreakerApi;
+import it.water.infrastructure.apigateway.api.options.GatewaySystemOptions;
 import it.water.infrastructure.apigateway.model.CircuitBreakerConfig;
 import it.water.infrastructure.apigateway.model.CircuitState;
 import it.water.core.interceptors.annotations.FrameworkComponent;
 import it.water.core.api.interceptors.OnActivate;
+import it.water.core.api.interceptors.OnDeactivate;
+import it.water.core.interceptors.annotations.Inject;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,9 +37,21 @@ public class CircuitBreakerServiceImpl implements CircuitBreakerApi {
     private final Map<String, CircuitBreakerState> states = new ConcurrentHashMap<>();
     private final Map<String, CircuitBreakerConfig> configs = new ConcurrentHashMap<>();
 
+    @Inject
+    @Setter
+    private GatewaySystemOptions gatewaySystemOptions;
+
     @OnActivate
     public void activate() {
         log.info("CircuitBreakerServiceImpl activated");
+    }
+
+    @OnDeactivate
+    public void deactivate() {
+        log.info("CircuitBreakerServiceImpl deactivating: clearing {} states and {} configs",
+                states.size(), configs.size());
+        states.clear();
+        configs.clear();
     }
 
     @Override
@@ -130,13 +146,26 @@ public class CircuitBreakerServiceImpl implements CircuitBreakerApi {
     }
 
     private CircuitBreakerConfig getOrDefaultConfig(String serviceName) {
+        int failureThreshold = gatewaySystemOptions != null
+                ? gatewaySystemOptions.getCircuitBreakerFailureThreshold()
+                : 5;
+        long timeoutMs = gatewaySystemOptions != null
+                ? gatewaySystemOptions.getCircuitBreakerTimeoutMs()
+                : 30000L;
         return configs.computeIfAbsent(serviceName, k -> CircuitBreakerConfig.builder()
                 .serviceName(k)
-                .failureThreshold(5)
+                .failureThreshold(failureThreshold)
                 .successThreshold(3)
-                .timeoutSeconds(30)
+                .timeoutSeconds(toTimeoutSeconds(timeoutMs))
                 .windowSizeSeconds(60)
                 .enabled(true)
                 .build());
+    }
+
+    private int toTimeoutSeconds(long timeoutMs) {
+        if (timeoutMs <= 0L) {
+            return 0;
+        }
+        return (int) Math.max(1L, (timeoutMs + 999L) / 1000L);
     }
 }

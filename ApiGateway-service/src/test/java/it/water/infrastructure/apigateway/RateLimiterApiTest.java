@@ -1,5 +1,6 @@
 package it.water.infrastructure.apigateway;
 
+import it.water.core.api.bundle.ApplicationProperties;
 import it.water.infrastructure.apigateway.api.RateLimiterApi;
 import it.water.infrastructure.apigateway.model.*;
 import it.water.core.api.registry.ComponentRegistry;
@@ -10,6 +11,8 @@ import it.water.core.testing.utils.runtime.TestRuntimeUtils;
 import lombok.Setter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
+
+import java.util.Properties;
 
 /**
  * Unit tests for Rate Limiter service.
@@ -26,6 +29,10 @@ class RateLimiterApiTest implements Service {
     @Inject
     @Setter
     private RateLimiterApi rateLimiterApi;
+
+    @Inject
+    @Setter
+    private ApplicationProperties applicationProperties;
 
     @BeforeAll
     void beforeAll() {
@@ -176,6 +183,27 @@ class RateLimiterApiTest implements Service {
 
         // Clean up
         rateLimiterApi.configureLimit("pattern-rl-1", null);
+    }
+
+    @Test
+    @Order(11)
+    void configuredDefaultRateLimitAppliesWhenNoExplicitRuleMatches() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        Properties props = new Properties();
+        props.setProperty("water.apigateway.rate.limiter.default.rpm", "2");
+        try {
+            applicationProperties.loadProperties(props);
+            GatewayRequest request = buildRequest("10.11.11.11");
+            int allowed = 0;
+            for (int i = 0; i < 4; i++) {
+                if (rateLimiterApi.checkRateLimit("10.11.11.11", request).isAllowed()) {
+                    allowed++;
+                }
+            }
+            Assertions.assertTrue(allowed <= 2, "Configured default limiter should block after 2 requests, allowed: " + allowed);
+        } finally {
+            applicationProperties.unloadProperties(props);
+        }
     }
 
     private GatewayRequest buildRequest(String clientIp) {

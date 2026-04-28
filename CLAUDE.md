@@ -136,7 +136,7 @@ All properties read via `GatewaySystemOptionsImpl` through `ApplicationPropertie
 
 | Property | Default | Notes |
 |---|---|---|
-| `water.apigateway.service.discovery.url` | `""` | Empty → use in-process registry only |
+| `water.discovery.url` | `""` | Empty → use in-process registry only |
 | `water.apigateway.proxy.timeout` | `30000` ms | Upstream HTTP timeout, min `1` ms |
 | `water.apigateway.circuit.breaker.failure.threshold` | `5` | Min `1` |
 | `water.apigateway.circuit.breaker.timeout.ms` | `30000` ms | Circuit OPEN timeout, min `0` |

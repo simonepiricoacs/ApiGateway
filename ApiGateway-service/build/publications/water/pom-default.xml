@@ -7,7 +7,7 @@
   <!-- that they should prefer consuming it instead. -->
   <!-- do_not_remove: published-with-gradle-metadata -->
   <modelVersion>4.0.0</modelVersion>
-  <groupId>it.water.apigateway</groupId>
+  <groupId>it.water.infrastructure.apigateway</groupId>
   <artifactId>ApiGateway-service</artifactId>
   <version>3.0.0</version>
   <packaging>pom</packaging>
@@ -199,13 +199,13 @@
       <scope>runtime</scope>
     </dependency>
     <dependency>
-      <groupId>it.water.apigateway</groupId>
+      <groupId>it.water.infrastructure.apigateway</groupId>
       <artifactId>ApiGateway-api</artifactId>
       <version>3.0.0</version>
       <scope>runtime</scope>
     </dependency>
     <dependency>
-      <groupId>it.water.apigateway</groupId>
+      <groupId>it.water.infrastructure.apigateway</groupId>
       <artifactId>ApiGateway-model</artifactId>
       <version>3.0.0</version>
       <scope>runtime</scope>

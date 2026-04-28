@@ -1,7 +1,7 @@
 {
   "formatVersion": "1.1",
   "component": {
-    "group": "it.water.apigateway",
+    "group": "it.water.infrastructure.apigateway",
     "module": "ApiGateway-service",
     "version": "3.0.0",
     "attributes": {
@@ -10,7 +10,7 @@
   },
   "createdBy": {
     "gradle": {
-      "version": "7.6.5"
+      "version": "8.5"
     }
   },
   "variants": [
@@ -27,11 +27,11 @@
         {
           "name": "ApiGateway-service-3.0.0.jar",
           "url": "ApiGateway-service-3.0.0.jar",
-          "size": 50558,
-          "sha512": "0403c61639d057facd0210ebf674cacd4a1d74529dfcc82aef031dcd64888286fc76d4157513d12257e73f8c96fdb2db818fc0a10c5620d67d6a83ae54baf9a5",
-          "sha256": "a48cc9f96aaa05e1c8d2e5a7032ab5350988e0205097c6de2acc8df6a21c7c2b",
-          "sha1": "7e8ef7ecbfe900ae903150197f7d2c2fbfd5b852",
-          "md5": "10afb62ac5cef1d962b38450edcfc2de"
+          "size": 106487,
+          "sha512": "588e2f7ec02a58cb2b561b2eb2b25684bb131c99a1d56229f3a6a8d258108a24a126816b083c12cc47542094d6c82f5dc1a1685969282e12a1c6f8f3c9937ba0",
+          "sha256": "1b01fc4445a55b5681b11a9c2431549a36e9aeac2edfcb17bdd5860cbcc4ca39",
+          "sha1": "64d71070f00ee1ae440460370d04fabf7b9c54d0",
+          "md5": "2edcd6a3637a4b3af57c71cc25700afb"
         }
       ]
     },
@@ -263,14 +263,14 @@
           }
         },
         {
-          "group": "it.water.apigateway",
+          "group": "it.water.infrastructure.apigateway",
           "module": "ApiGateway-api",
           "version": {
             "requires": "3.0.0"
           }
         },
         {
-          "group": "it.water.apigateway",
+          "group": "it.water.infrastructure.apigateway",
           "module": "ApiGateway-model",
           "version": {
             "requires": "3.0.0"
@@ -281,11 +281,11 @@
         {
           "name": "ApiGateway-service-3.0.0.jar",
           "url": "ApiGateway-service-3.0.0.jar",
-          "size": 50558,
-          "sha512": "0403c61639d057facd0210ebf674cacd4a1d74529dfcc82aef031dcd64888286fc76d4157513d12257e73f8c96fdb2db818fc0a10c5620d67d6a83ae54baf9a5",
-          "sha256": "a48cc9f96aaa05e1c8d2e5a7032ab5350988e0205097c6de2acc8df6a21c7c2b",
-          "sha1": "7e8ef7ecbfe900ae903150197f7d2c2fbfd5b852",
-          "md5": "10afb62ac5cef1d962b38450edcfc2de"
+          "size": 106487,
+          "sha512": "588e2f7ec02a58cb2b561b2eb2b25684bb131c99a1d56229f3a6a8d258108a24a126816b083c12cc47542094d6c82f5dc1a1685969282e12a1c6f8f3c9937ba0",
+          "sha256": "1b01fc4445a55b5681b11a9c2431549a36e9aeac2edfcb17bdd5860cbcc4ca39",
+          "sha1": "64d71070f00ee1ae440460370d04fabf7b9c54d0",
+          "md5": "2edcd6a3637a4b3af57c71cc25700afb"
         }
       ]
     }

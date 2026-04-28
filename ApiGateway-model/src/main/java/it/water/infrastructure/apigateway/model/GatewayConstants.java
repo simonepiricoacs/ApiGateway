@@ -24,13 +24,11 @@ package it.water.infrastructure.apigateway.model;
 public abstract class GatewayConstants {
 
     /**
-     * URL of the ServiceDiscovery REST endpoint used by the gateway to sync
-     * the list of available services when the local ServiceRegistrationApi is
-     * not available (e.g., gateway running in a separate runtime from the
-     * ServiceDiscovery).
+     * URL of the ServiceDiscovery REST endpoint used by all runtimes,
+     * including ApiGateway, to interact with ServiceDiscovery.
      * Example: http://service-discovery:8181/water
      */
-    public static final String PROP_SERVICE_DISCOVERY_URL = "water.apigateway.service.discovery.url";
+    public static final String PROP_SERVICE_DISCOVERY_URL = "water.discovery.url";
     public static final String PROP_PROXY_TIMEOUT_MS = "water.apigateway.proxy.timeout";
     public static final String PROP_CIRCUIT_BREAKER_FAILURE_THRESHOLD =
             "water.apigateway.circuit.breaker.failure.threshold";

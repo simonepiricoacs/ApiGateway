@@ -1,3 +1,4 @@
 it.water.infrastructure.apigateway.service.rest.GatewayManagementRestControllerImpl
+it.water.infrastructure.apigateway.service.rest.GatewayProxyRestControllerImpl
 it.water.infrastructure.apigateway.service.rest.RateLimitRuleRestControllerImpl
 it.water.infrastructure.apigateway.service.rest.RouteRestControllerImpl

@@ -21,7 +21,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
   capture_pageview:false,
   api_transport:'sendBeacon',
   loaded: function(posthog) { 
-    posthog.capture("report_feature",{distinct_id:"af77f833-27ff-4c81-b168-361b577cfca7",karate_version:"1.5.0",karate_meta:null});
+    posthog.capture("report_feature",{distinct_id:"c1a2c90e-f0b2-40c9-a85d-f985ca6f0c04",karate_version:"1.5.0",karate_meta:null});
   }
 });
 </script>
@@ -49,7 +49,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
     <div>Scenarios</div>
   </div>
   <div id="nav-date">
-    <div>2026-03-19 11:56:16 AM</div>
+    <div>2026-04-27 03:38:22 PM</div>
   </div>
 </div>
 
@@ -90,7 +90,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
               </div>
             </div>
             <div class="scenario-time passed">
-              <span>ms:</span>&nbsp;<span>1091</span>
+              <span>ms:</span>&nbsp;<span>158</span>
             </div>
           </div>
           
@@ -107,7 +107,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>header Content-Type = &#39;application/json&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">8</div>
+    <div class="time-cell passed">1</div>
   </div>
 
    
@@ -135,7 +135,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>And</span>&nbsp;<span>header Accept = &#39;application/json&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">1</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -163,7 +163,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>url serviceBaseUrl + &#39;/water/api/gateway/management/health&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">5</div>
+    <div class="time-cell passed">1</div>
   </div>
 
    
@@ -191,7 +191,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>When</span>&nbsp;<span>method GET</span>
       </div>
     </div>
-    <div class="time-cell passed">988</div>
+    <div class="time-cell passed">143</div>
   </div>
 
    
@@ -200,23 +200,23 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
 
   
 
-  <div class="preformatted" data-parent="0.10">11:56:15.462 request:
-1 &gt; GET http://localhost:54848/water/api/gateway/management/health
+  <div class="preformatted" data-parent="0.10">15:38:21.936 request:
+1 &gt; GET http://localhost:60200/water/api/gateway/management/health
 1 &gt; Content-Type: application/json
 1 &gt; Accept: application/json
-1 &gt; Host: localhost:54848
+1 &gt; Host: localhost:60200
 1 &gt; Connection: Keep-Alive
-1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.11)
+1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.17)
 1 &gt; Accept-Encoding: gzip,deflate
 
 
-11:56:16.213 response time in milliseconds: 706
+15:38:22.029 response time in milliseconds: 92
 1 &lt; 200
-1 &lt; Date: Thu, 19 Mar 2026 10:56:15 GMT
+1 &lt; Date: Mon, 27 Apr 2026 13:38:22 GMT
 1 &lt; Content-Type: application/json
 1 &lt; Transfer-Encoding: chunked
 1 &lt; Server: Jetty(9.4.55.v20240627)
-{&quot;service&quot;:&quot;ApiGateway&quot;,&quot;status&quot;:&quot;UP&quot;,&quot;timestamp&quot;:1773917775936}
+{&quot;service&quot;:&quot;ApiGateway&quot;,&quot;status&quot;:&quot;UP&quot;,&quot;timestamp&quot;:1777297101997}
 
 </div>   
 
@@ -237,7 +237,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Then</span>&nbsp;<span>status 200</span>
       </div>
     </div>
-    <div class="time-cell passed">1</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -265,7 +265,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>And</span>&nbsp;<span>match response ==</span>
       </div>
     </div>
-    <div class="time-cell passed">88</div>
+    <div class="time-cell passed">13</div>
   </div>
 
    
@@ -298,7 +298,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
               </div>
             </div>
             <div class="scenario-time passed">
-              <span>ms:</span>&nbsp;<span>110</span>
+              <span>ms:</span>&nbsp;<span>8</span>
             </div>
           </div>
           
@@ -315,7 +315,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>header Content-Type = &#39;application/json&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">1</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -343,7 +343,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>And</span>&nbsp;<span>header Accept = &#39;application/json&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">3</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -371,7 +371,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>url serviceBaseUrl + &#39;/water/api/gateway/management/metrics&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">5</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -399,7 +399,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>When</span>&nbsp;<span>method GET</span>
       </div>
     </div>
-    <div class="time-cell passed">93</div>
+    <div class="time-cell passed">6</div>
   </div>
 
    
@@ -408,19 +408,19 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
 
   
 
-  <div class="preformatted" data-parent="0.26">11:56:16.541 request:
-1 &gt; GET http://localhost:54848/water/api/gateway/management/metrics
+  <div class="preformatted" data-parent="0.26">15:38:22.064 request:
+1 &gt; GET http://localhost:60200/water/api/gateway/management/metrics
 1 &gt; Content-Type: application/json
 1 &gt; Accept: application/json
-1 &gt; Host: localhost:54848
+1 &gt; Host: localhost:60200
 1 &gt; Connection: Keep-Alive
-1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.11)
+1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.17)
 1 &gt; Accept-Encoding: gzip,deflate
 
 
-11:56:16.617 response time in milliseconds: 75
+15:38:22.069 response time in milliseconds: 5
 1 &lt; 200
-1 &lt; Date: Thu, 19 Mar 2026 10:56:16 GMT
+1 &lt; Date: Mon, 27 Apr 2026 13:38:22 GMT
 1 &lt; Content-Type: application/json
 1 &lt; Transfer-Encoding: chunked
 1 &lt; Server: Jetty(9.4.55.v20240627)
@@ -473,7 +473,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>And</span>&nbsp;<span>match response == &#39;#object&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">7</div>
+    <div class="time-cell passed">1</div>
   </div>
 
    
@@ -502,7 +502,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
               </div>
             </div>
             <div class="scenario-time passed">
-              <span>ms:</span>&nbsp;<span>56</span>
+              <span>ms:</span>&nbsp;<span>10</span>
             </div>
           </div>
           
@@ -519,7 +519,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>header Content-Type = &#39;application/json&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">1</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -575,7 +575,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>url serviceBaseUrl + &#39;/water/api/gateway/management/circuit-breakers&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">3</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -603,7 +603,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>When</span>&nbsp;<span>method GET</span>
       </div>
     </div>
-    <div class="time-cell passed">47</div>
+    <div class="time-cell passed">9</div>
   </div>
 
    
@@ -612,19 +612,19 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
 
   
 
-  <div class="preformatted" data-parent="0.35">11:56:16.680 request:
-1 &gt; GET http://localhost:54848/water/api/gateway/management/circuit-breakers
+  <div class="preformatted" data-parent="0.35">15:38:22.076 request:
+1 &gt; GET http://localhost:60200/water/api/gateway/management/circuit-breakers
 1 &gt; Content-Type: application/json
 1 &gt; Accept: application/json
-1 &gt; Host: localhost:54848
+1 &gt; Host: localhost:60200
 1 &gt; Connection: Keep-Alive
-1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.11)
+1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.17)
 1 &gt; Accept-Encoding: gzip,deflate
 
 
-11:56:16.710 response time in milliseconds: 30
+15:38:22.084 response time in milliseconds: 8
 1 &lt; 200
-1 &lt; Date: Thu, 19 Mar 2026 10:56:16 GMT
+1 &lt; Date: Mon, 27 Apr 2026 13:38:22 GMT
 1 &lt; Content-Type: application/json
 1 &lt; Transfer-Encoding: chunked
 1 &lt; Server: Jetty(9.4.55.v20240627)
@@ -677,7 +677,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>And</span>&nbsp;<span>match response == &#39;#object&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">5</div>
+    <div class="time-cell passed">1</div>
   </div>
 
    
@@ -706,7 +706,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
               </div>
             </div>
             <div class="scenario-time passed">
-              <span>ms:</span>&nbsp;<span>40</span>
+              <span>ms:</span>&nbsp;<span>9</span>
             </div>
           </div>
           
@@ -723,7 +723,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>header Content-Type = &#39;application/json&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">3</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -779,7 +779,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>Given</span>&nbsp;<span>url serviceBaseUrl + &#39;/water/api/gateway/management/sync&#39;</span>
       </div>
     </div>
-    <div class="time-cell passed">2</div>
+    <div class="time-cell passed">0</div>
   </div>
 
    
@@ -807,7 +807,7 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
         <span>When</span>&nbsp;<span>method POST</span>
       </div>
     </div>
-    <div class="time-cell passed">35</div>
+    <div class="time-cell passed">7</div>
   </div>
 
    
@@ -816,21 +816,23 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
 
   
 
-  <div class="preformatted" data-parent="0.44">11:56:16.761 request:
-1 &gt; POST http://localhost:54848/water/api/gateway/management/sync
+  <div class="preformatted" data-parent="0.44">15:38:22.093 request:
+1 &gt; POST http://localhost:60200/water/api/gateway/management/sync
 1 &gt; Content-Type: application/json
 1 &gt; Accept: application/json
-1 &gt; Host: localhost:54848
+1 &gt; Host: localhost:60200
 1 &gt; Connection: Keep-Alive
-1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.11)
+1 &gt; User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.17)
 1 &gt; Accept-Encoding: gzip,deflate
 
 
-11:56:16.781 response time in milliseconds: 19
-1 &lt; 204
-1 &lt; Date: Thu, 19 Mar 2026 10:56:16 GMT
+15:38:22.098 response time in milliseconds: 5
+1 &lt; 502
+1 &lt; Date: Mon, 27 Apr 2026 13:38:22 GMT
+1 &lt; Content-Type: application/json
+1 &lt; Transfer-Encoding: chunked
 1 &lt; Server: Jetty(9.4.55.v20240627)
-
+{&quot;error&quot;:&quot;ServiceDiscovery sync failed: No local ServiceDiscovery API available and GatewaySystemOptions.getServiceDiscoveryUrl() is not configured&quot;}
 
 </div>   
 
@@ -848,10 +850,38 @@ posthog.init('phc_M6fKk3dSX9HjglkqPSybauGas45NINb7EgsPGU8N9g1',{
       <div class="step-ref passed">45</div>
       
       <div class="step-cell passed">
-        <span>Then</span>&nbsp;<span>status 204</span>
+        <span>Then</span>&nbsp;<span>status 502</span>
       </div>
     </div>
     <div class="time-cell passed">0</div>
+  </div>
+
+   
+  
+  
+
+  
+
+     
+
+  
+
+</div>
+</div>
+          <div><div>
+  
+
+  
+
+  <div class="step-row">
+    <div class="step-container" id="0.46">
+      <div class="step-ref passed">46</div>
+      
+      <div class="step-cell passed">
+        <span>And</span>&nbsp;<span>match response.error contains &#39;ServiceDiscovery sync failed&#39;</span>
+      </div>
+    </div>
+    <div class="time-cell passed">1</div>
   </div>
 
    

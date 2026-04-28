@@ -42,4 +42,5 @@ Feature: Check Gateway Management Rest Api Response
     And header Accept = 'application/json'
     Given url serviceBaseUrl + '/water/api/gateway/management/sync'
     When method POST
-    Then status 204
+    Then status 502
+    And match response.error contains 'ServiceDiscovery sync failed'

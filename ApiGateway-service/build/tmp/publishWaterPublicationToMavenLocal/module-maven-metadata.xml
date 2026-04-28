@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <metadata>
-  <groupId>it.water.apigateway</groupId>
+  <groupId>it.water.infrastructure.apigateway</groupId>
   <artifactId>ApiGateway-service</artifactId>
   <versioning>
     <latest>3.0.0</latest>
@@ -8,6 +8,6 @@
     <versions>
       <version>3.0.0</version>
     </versions>
-    <lastUpdated>20260301133529</lastUpdated>
+    <lastUpdated>20260427133947</lastUpdated>
   </versioning>
 </metadata>

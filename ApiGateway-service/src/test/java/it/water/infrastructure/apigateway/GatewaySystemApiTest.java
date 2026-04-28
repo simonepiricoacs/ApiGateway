@@ -192,7 +192,7 @@ class GatewaySystemApiTest implements Service {
         httpServer.start();
         try {
             impl.setServiceRegistrationApi(null);
-            props.setProperty("water.apigateway.service.discovery.url", "http://127.0.0.1:" + httpServer.getAddress().getPort());
+            props.setProperty("water.discovery.url", "http://127.0.0.1:" + httpServer.getAddress().getPort());
             applicationProperties.loadProperties(props);
 
             gatewaySystemApi.syncWithServiceDiscovery();
@@ -232,7 +232,7 @@ class GatewaySystemApiTest implements Service {
         });
         httpServer.start();
         Properties props = new Properties();
-        props.setProperty("water.apigateway.service.discovery.url", "http://127.0.0.1:" + httpServer.getAddress().getPort());
+        props.setProperty("water.discovery.url", "http://127.0.0.1:" + httpServer.getAddress().getPort());
         try {
             impl.setServiceRegistrationApi(null);
             applicationProperties.loadProperties(props);

@@ -165,7 +165,7 @@ Defined in `it.water.infrastructure.apigateway.actions.ApiGatewayActions`:
 All properties are read through the Options pattern (`GatewaySystemOptions` + `GatewaySystemOptionsImpl`). Missing values fall back to the defaults shown below.
 
 ```properties
-water.apigateway.service.discovery.url=          # empty → rely on in-process ServiceRegistrationApi only
+water.discovery.url=                             # empty → rely on in-process ServiceRegistrationApi only
 water.apigateway.proxy.timeout=30000             # upstream HTTP timeout (ms)
 water.apigateway.circuit.breaker.failure.threshold=5
 water.apigateway.circuit.breaker.timeout.ms=30000 # circuit OPEN timeout (ms)

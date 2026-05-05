@@ -6,7 +6,7 @@ Feature: Check Gateway Management Rest Api Response
 
     Given header Content-Type = 'application/json'
     And header Accept = 'application/json'
-    Given url serviceBaseUrl + '/water/api/gateway/management/health'
+    Given url serviceBaseUrl + '/water/gateway/management/health'
     When method GET
     Then status 200
     And match response ==
@@ -22,7 +22,7 @@ Feature: Check Gateway Management Rest Api Response
 
     Given header Content-Type = 'application/json'
     And header Accept = 'application/json'
-    Given url serviceBaseUrl + '/water/api/gateway/management/metrics'
+    Given url serviceBaseUrl + '/water/gateway/management/metrics'
     When method GET
     Then status 200
     And match response == '#object'
@@ -31,7 +31,7 @@ Feature: Check Gateway Management Rest Api Response
 
     Given header Content-Type = 'application/json'
     And header Accept = 'application/json'
-    Given url serviceBaseUrl + '/water/api/gateway/management/circuit-breakers'
+    Given url serviceBaseUrl + '/water/gateway/management/circuit-breakers'
     When method GET
     Then status 200
     And match response == '#object'
@@ -40,7 +40,7 @@ Feature: Check Gateway Management Rest Api Response
 
     Given header Content-Type = 'application/json'
     And header Accept = 'application/json'
-    Given url serviceBaseUrl + '/water/api/gateway/management/sync'
+    Given url serviceBaseUrl + '/water/gateway/management/sync'
     When method POST
     Then status 502
     And match response.error contains 'ServiceDiscovery sync failed'

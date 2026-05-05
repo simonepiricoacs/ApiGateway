@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * REST API interface for Gateway management operations.
  */
-@Path("/api/gateway/management")
+@Path("/gateway/management")
 @Api(produces = MediaType.APPLICATION_JSON, tags = "Gateway Management API")
 @FrameworkRestApi
 public interface GatewayManagementRestApi extends RestApi {

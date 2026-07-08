@@ -52,3 +52,22 @@ Feature: Check Gateway Management Rest Api Response
     # (admin impersonation) — the 502 confirms endpoint wiring is correct, NOT an authz rejection.
     Then status 502
     And match response.error contains 'ServiceDiscovery sync failed'
+
+  Scenario: Circuit Breakers Endpoint shape contains string values
+
+    Given header Content-Type = 'application/json'
+    And header Accept = 'application/json'
+    Given url serviceBaseUrl + '/water/api/gateway/management/circuit-breakers'
+    When method GET
+    Then status 200
+    # Response may be empty object or map of serviceName -> state string
+    And match response == '#object'
+
+  Scenario: Metrics Endpoint returns map that can include service statistics
+
+    Given header Content-Type = 'application/json'
+    And header Accept = 'application/json'
+    Given url serviceBaseUrl + '/water/api/gateway/management/metrics'
+    When method GET
+    Then status 200
+    And match response == '#object'

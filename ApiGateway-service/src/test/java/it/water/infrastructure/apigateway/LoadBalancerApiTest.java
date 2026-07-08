@@ -251,6 +251,61 @@ class LoadBalancerApiTest implements Service {
         }
     }
 
+    @Test
+    @Order(16)
+    void reportSuccessForUnknownInstanceIdDoesNotThrow() {
+        // Covers the branch where leastConnectionsCounts.get(key) == null
+        Assertions.assertDoesNotThrow(
+                () -> loadBalancerApi.reportSuccess("svc-no-counter", "no-such-instance", 50),
+                "reportSuccess with unknown instanceId must not throw");
+    }
+
+    @Test
+    @Order(17)
+    void reportFailureForUnknownInstanceIdDoesNotThrow() {
+        // Covers the branch where leastConnectionsCounts.get(key) == null in reportFailure
+        Assertions.assertDoesNotThrow(
+                () -> loadBalancerApi.reportFailure("svc-no-counter-fail", "no-such-instance-2",
+                        new RuntimeException("test-fail")),
+                "reportFailure with unknown instanceId must not throw");
+    }
+
+    @Test
+    @Order(18)
+    void ipHashWithEmptyStringIpReturnsFirstInstance() {
+        // Covers the clientIp.isEmpty() branch in selectByIpHash
+        loadBalancerApi.setStrategy(LoadBalancerStrategy.IP_HASH);
+        List<ServiceRegistration> instances = createInstances(3);
+        GatewayRequest request = GatewayRequest.builder()
+                .method(HttpMethod.GET)
+                .path("/api/test")
+                .clientIp("")
+                .build();
+        ServiceRegistration sel = loadBalancerApi.selectInstance("empty-ip-svc", request, instances);
+        Assertions.assertNotNull(sel);
+        Assertions.assertEquals(instances.get(0).getInstanceId(), sel.getInstanceId(),
+                "Empty client IP must return first instance");
+    }
+
+    @Test
+    @Order(19)
+    void leastConnectionsWithReportSuccessCounterAtZeroDoesNotDecrement() {
+        // Covers the counter.get() > 0 == false branch in reportSuccess/reportFailure
+        loadBalancerApi.setStrategy(LoadBalancerStrategy.LEAST_CONNECTIONS);
+        List<ServiceRegistration> instances = createInstances(1);
+        GatewayRequest request = buildRequest("10.0.0.1");
+
+        // Select once to register the counter (it will be incremented to 1)
+        ServiceRegistration sel = loadBalancerApi.selectInstance("lc-zero-svc", request, instances);
+        Assertions.assertNotNull(sel);
+
+        // Report success twice: first brings counter to 0, second should not decrement below 0
+        loadBalancerApi.reportSuccess("lc-zero-svc", sel.getInstanceId(), 20);
+        // Counter is now 0; another success should not go negative
+        Assertions.assertDoesNotThrow(
+                () -> loadBalancerApi.reportSuccess("lc-zero-svc", sel.getInstanceId(), 20));
+    }
+
     private List<ServiceRegistration> createInstances(int count) {
         List<ServiceRegistration> instances = new ArrayList<>();
         for (int i = 0; i < count; i++) {

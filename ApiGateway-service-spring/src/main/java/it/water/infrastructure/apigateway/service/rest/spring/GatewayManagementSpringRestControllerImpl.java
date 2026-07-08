@@ -1,12 +1,12 @@
 package it.water.infrastructure.apigateway.service.rest.spring;
 
 import it.water.infrastructure.apigateway.api.GatewayApi;
+import it.water.infrastructure.apigateway.model.GatewayManagementSupport;
 import it.water.infrastructure.apigateway.model.ServiceStats;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -27,11 +27,7 @@ public class GatewayManagementSpringRestControllerImpl implements GatewayManagem
 
     @Override
     public Map<String, Object> health() {
-        Map<String, Object> health = new HashMap<>();
-        health.put("status", "UP");
-        health.put("timestamp", System.currentTimeMillis());
-        health.put("service", "ApiGateway");
-        return health;
+        return GatewayManagementSupport.health();
     }
 
     @Override
@@ -41,11 +37,7 @@ public class GatewayManagementSpringRestControllerImpl implements GatewayManagem
 
     @Override
     public Map<String, String> circuitBreakers() {
-        Map<String, ServiceStats> stats = gatewayApi.getServiceStatistics();
-        Map<String, String> result = new HashMap<>();
-        stats.forEach((service, stat) -> result.put(service,
-                stat.getCircuitState() != null ? stat.getCircuitState().name() : "CLOSED"));
-        return result;
+        return GatewayManagementSupport.circuitBreakers(gatewayApi.getServiceStatistics());
     }
 
     @Override

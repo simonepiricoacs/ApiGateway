@@ -69,6 +69,59 @@ Feature: Check Route Rest Api Response
     When method DELETE
     Then status 204
 
+  Scenario: Route Update Operation
+
+    * def routeId = 'karate-route-update-' + randomSeed
+
+    # Create
+    Given header Content-Type = 'application/json'
+    And header Accept = 'application/json'
+    Given url serviceBaseUrl + '/water/api/gateway/routes'
+    And request
+    """
+    {
+      "entityVersion": 1,
+      "routeId": "#(routeId)",
+      "pathPattern": "/api/karate-update/**",
+      "method": "ANY",
+      "targetServiceName": "karate-update-backend",
+      "priority": 5,
+      "enabled": true
+    }
+    """
+    When method POST
+    Then status 200
+    * def updateEntityId = response.id
+    * def savedEntity = response
+
+    # Update
+    Given header Content-Type = 'application/json'
+    And header Accept = 'application/json'
+    Given url serviceBaseUrl + '/water/api/gateway/routes'
+    And request
+    """
+    {
+      "id": #(updateEntityId),
+      "entityVersion": 1,
+      "routeId": "#(routeId)",
+      "pathPattern": "/api/karate-update/**",
+      "method": "GET",
+      "targetServiceName": "karate-update-backend",
+      "priority": 15,
+      "enabled": true
+    }
+    """
+    When method PUT
+    Then status 200
+    And match response.priority == 15
+
+    # Delete
+    Given header Content-Type = 'application/json'
+    And header Accept = 'application/json'
+    Given url serviceBaseUrl + '/water/api/gateway/routes/' + updateEntityId
+    When method DELETE
+    Then status 204
+
   Scenario: Refresh Routes Endpoint
 
     Given header Content-Type = 'application/json'

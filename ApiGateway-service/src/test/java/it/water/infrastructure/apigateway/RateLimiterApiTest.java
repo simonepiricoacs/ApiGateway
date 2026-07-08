@@ -206,6 +206,133 @@ class RateLimiterApiTest implements Service {
         }
     }
 
+    @Test
+    @Order(12)
+    void tokenBucketRemainingIsZeroWhenBucketExhausted() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        // Capacity=1, so after 1 request the bucket is empty
+        RateLimitRule rule = new RateLimitRule("tb-remain-1", RateLimitKeyType.CLIENT_IP, 1, 60, RateLimitAlgorithm.TOKEN_BUCKET);
+        rule.setBurstCapacity(1);
+        rateLimiterApi.configureLimit("tb-remain-1", rule);
+
+        GatewayRequest request = buildRequest("10.20.20.1");
+        // First: allowed, remaining>=0
+        RateLimitResult first = rateLimiterApi.checkRateLimit("10.20.20.1", request);
+        Assertions.assertTrue(first.isAllowed());
+        Assertions.assertTrue(first.getRemaining() >= 0);
+
+        // Second: blocked, remaining=0, resetAfterMs > 0
+        RateLimitResult second = rateLimiterApi.checkRateLimit("10.20.20.1", request);
+        Assertions.assertFalse(second.isAllowed());
+        Assertions.assertEquals(0, second.getRemaining());
+        Assertions.assertTrue(second.getResetAfterMs() > 0,
+                "resetAfterMs must be positive when bucket is empty");
+
+        rateLimiterApi.configureLimit("tb-remain-1", null);
+    }
+
+    @Test
+    @Order(13)
+    void tokenBucketResetAfterMsIsZeroWhenAllowed() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        RateLimitRule rule = new RateLimitRule("tb-reset-1", RateLimitKeyType.CLIENT_IP, 100, 60, RateLimitAlgorithm.TOKEN_BUCKET);
+        rule.setBurstCapacity(100);
+        rateLimiterApi.configureLimit("tb-reset-1", rule);
+
+        GatewayRequest request = buildRequest("10.21.21.1");
+        RateLimitResult result = rateLimiterApi.checkRateLimit("10.21.21.1", request);
+        Assertions.assertTrue(result.isAllowed());
+        Assertions.assertEquals(0, result.getResetAfterMs(),
+                "resetAfterMs must be 0 when request is allowed");
+
+        rateLimiterApi.configureLimit("tb-reset-1", null);
+    }
+
+    @Test
+    @Order(14)
+    void slidingWindowRemainingAndResetAfterMsWhenBlocked() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        RateLimitRule rule = new RateLimitRule("sw-reset-1", RateLimitKeyType.CLIENT_IP, 1, 60, RateLimitAlgorithm.SLIDING_WINDOW);
+        rateLimiterApi.configureLimit("sw-reset-1", rule);
+
+        GatewayRequest request = buildRequest("10.22.22.1");
+        // First: allowed
+        RateLimitResult first = rateLimiterApi.checkRateLimit("10.22.22.1", request);
+        Assertions.assertTrue(first.isAllowed());
+
+        // Second: blocked, remaining=0, resetAfterMs >= 0
+        RateLimitResult second = rateLimiterApi.checkRateLimit("10.22.22.1", request);
+        Assertions.assertFalse(second.isAllowed());
+        Assertions.assertEquals(0, second.getRemaining());
+        Assertions.assertTrue(second.getResetAfterMs() >= 0,
+                "resetAfterMs must be non-negative when sliding window blocks: " + second.getResetAfterMs());
+
+        rateLimiterApi.configureLimit("sw-reset-1", null);
+    }
+
+    @Test
+    @Order(15)
+    void fixedWindowRemainingAndResetAfterMsWhenBlocked() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        RateLimitRule rule = new RateLimitRule("fw-reset-1", RateLimitKeyType.CLIENT_IP, 1, 60, RateLimitAlgorithm.FIXED_WINDOW);
+        rateLimiterApi.configureLimit("fw-reset-1", rule);
+
+        GatewayRequest request = buildRequest("10.23.23.1");
+        // First: allowed, remaining=0 (1 - 1 = 0)
+        RateLimitResult first = rateLimiterApi.checkRateLimit("10.23.23.1", request);
+        Assertions.assertTrue(first.isAllowed());
+        Assertions.assertEquals(0, first.getRemaining());
+
+        // Second: blocked
+        RateLimitResult second = rateLimiterApi.checkRateLimit("10.23.23.1", request);
+        Assertions.assertFalse(second.isAllowed());
+        Assertions.assertEquals(0, second.getRemaining());
+        Assertions.assertTrue(second.getResetAfterMs() >= 0,
+                "resetAfterMs must be non-negative when fixed window blocks: " + second.getResetAfterMs());
+
+        rateLimiterApi.configureLimit("fw-reset-1", null);
+    }
+
+    @Test
+    @Order(16)
+    void configureLimitWithNullRuleRemovesIt() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        RateLimitRule rule = new RateLimitRule("null-remove-1", RateLimitKeyType.CLIENT_IP, 10, 60, RateLimitAlgorithm.TOKEN_BUCKET);
+        rateLimiterApi.configureLimit("null-remove-1", rule);
+        Assertions.assertNotNull(rateLimiterApi.getRule("null-remove-1"));
+
+        rateLimiterApi.configureLimit("null-remove-1", null);
+        Assertions.assertNull(rateLimiterApi.getRule("null-remove-1"),
+                "Configuring null should remove the rule");
+    }
+
+    @Test
+    @Order(17)
+    void getAllRulesReturnsEmptyWhenAllRemoved() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        var rules = rateLimiterApi.getAllRules();
+        Assertions.assertNotNull(rules);
+        Assertions.assertTrue(rules.isEmpty(), "All rules removed → list must be empty");
+    }
+
+    @Test
+    @Order(18)
+    void checkRateLimitWithRulesButNoneMatchingFallsBackToDefault() {
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+        // Add a rule that NEVER matches any key (specific pattern)
+        RateLimitRule rule = new RateLimitRule("no-match-rule", RateLimitKeyType.CLIENT_IP, 1, 60, RateLimitAlgorithm.FIXED_WINDOW);
+        rule.setKeyPattern("999\\.999\\.999\\.999");
+        rateLimiterApi.configureLimit("no-match-rule", rule);
+
+        // No default configured → falls through to allowed:true
+        GatewayRequest request = buildRequest("10.30.30.30");
+        RateLimitResult result = rateLimiterApi.checkRateLimit("10.30.30.30", request);
+        Assertions.assertTrue(result.isAllowed(),
+                "When rules exist but none match and no default, request must be allowed");
+
+        rateLimiterApi.configureLimit("no-match-rule", null);
+    }
+
     private GatewayRequest buildRequest(String clientIp) {
         return GatewayRequest.builder()
                 .method(HttpMethod.GET)

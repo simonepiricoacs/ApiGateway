@@ -18,6 +18,7 @@ import it.water.service.discovery.model.ServiceStatus;
 import lombok.Setter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 
 import java.io.OutputStream;
 import java.lang.reflect.Field;
@@ -321,6 +322,275 @@ class GatewaySystemApiTest implements Service {
         List<ServiceRegistration> healthy = gatewaySystemApi.getHealthyInstances(svcName);
         Assertions.assertNotNull(healthy);
         Assertions.assertTrue(healthy.isEmpty(), "Instance with OPEN circuit must be filtered out");
+    }
+
+    @Test
+    @Order(16)
+    void directImplRecordRequestUpdatesStats() {
+        // Test recordRequest directly on a fresh impl instance to avoid proxy overhead
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        fresh.recordRequest("direct-svc-1", true, 100);
+        fresh.recordRequest("direct-svc-1", false, 200);
+        fresh.recordRequest("direct-svc-1", true, 300);
+
+        Map<String, ServiceStats> stats = fresh.getServiceStatistics();
+        ServiceStats s = stats.get("direct-svc-1");
+        Assertions.assertNotNull(s);
+        Assertions.assertEquals(3, s.getTotalRequests());
+        Assertions.assertEquals(2, s.getSuccessCount());
+        Assertions.assertEquals(1, s.getFailureCount());
+        Assertions.assertTrue(s.getAvgLatencyMs() > 0 && s.getAvgLatencyMs() <= 300);
+    }
+
+    @Test
+    @Order(17)
+    void directImplGetCachedInstances() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        List<ServiceRegistration> empty = fresh.getCachedInstances("no-such-svc");
+        Assertions.assertNotNull(empty);
+        Assertions.assertTrue(empty.isEmpty());
+    }
+
+    @Test
+    @Order(18)
+    void directImplDeactivateClearsCaches() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+        fresh.recordRequest("deact-svc", true, 50);
+
+        // Put something in serviceCache via reflection
+        Field cacheField = GatewaySystemServiceImpl.class.getDeclaredField("serviceCache");
+        cacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>> cacheRef =
+                (java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>>) cacheField.get(fresh);
+        cacheRef.get().put("deact-svc-cached", new ArrayList<>());
+
+        fresh.deactivate();
+
+        Assertions.assertTrue(fresh.getServiceStatistics().isEmpty());
+    }
+
+    @Test
+    @Order(19)
+    void directImplRefreshServiceCacheGroupsServicesByName() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        java.lang.reflect.Method refreshCache = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("refreshServiceCache", List.class);
+        refreshCache.setAccessible(true);
+
+        List<ServiceRegistration> services = new ArrayList<>();
+        services.add(new ServiceRegistration("svc-a", "1.0", "a-1", "http://localhost:19100", "http", ServiceStatus.UP));
+        services.add(new ServiceRegistration("svc-a", "1.0", "a-2", "http://localhost:19101", "http", ServiceStatus.UP));
+        services.add(new ServiceRegistration("svc-b", "1.0", "b-1", "http://localhost:19200", "http", ServiceStatus.DOWN));
+
+        refreshCache.invoke(fresh, services);
+
+        List<ServiceRegistration> cachedA = fresh.getCachedInstances("svc-a");
+        List<ServiceRegistration> cachedB = fresh.getCachedInstances("svc-b");
+        Assertions.assertEquals(2, cachedA.size());
+        Assertions.assertEquals(1, cachedB.size());
+    }
+
+    @Test
+    @Order(20)
+    void directImplRefreshServiceCacheWithEmptyListClearsCache() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        java.lang.reflect.Method refreshCache = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("refreshServiceCache", List.class);
+        refreshCache.setAccessible(true);
+
+        // First populate
+        List<ServiceRegistration> services = List.of(
+                new ServiceRegistration("svc-x", "1.0", "x-1", "http://localhost:19300", "http", ServiceStatus.UP));
+        refreshCache.invoke(fresh, services);
+        Assertions.assertEquals(1, fresh.getCachedInstances("svc-x").size());
+
+        // Now clear with empty list
+        refreshCache.invoke(fresh, new ArrayList<>());
+        Assertions.assertTrue(fresh.getCachedInstances("svc-x").isEmpty());
+    }
+
+    @Test
+    @Order(21)
+    void directImplHasRemoteServiceDiscoveryConfiguredReturnsFalseWhenNoOptions() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+        // No options set - getConfiguredServiceDiscoveryUrl returns ""
+        java.lang.reflect.Method hasRemote = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("hasRemoteServiceDiscoveryConfigured");
+        hasRemote.setAccessible(true);
+        Boolean result = (Boolean) hasRemote.invoke(fresh);
+        Assertions.assertFalse(result);
+    }
+
+    @Test
+    @Order(22)
+    void directImplResolveServiceDiscoveryEndpointThrowsWhenNoUrlConfigured() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        java.lang.reflect.Method resolve = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("resolveServiceDiscoveryEndpoint");
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException ex = Assertions.assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> resolve.invoke(fresh));
+        Assertions.assertInstanceOf(IllegalStateException.class, ex.getCause());
+        Assertions.assertTrue(ex.getCause().getMessage().contains("not configured"));
+    }
+
+    @Test
+    @Order(23)
+    void directImplResolveServiceDiscoveryEndpointNormalizesWaterSuffix() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        Field optField = GatewaySystemServiceImpl.class.getDeclaredField("gatewaySystemOptions");
+        optField.setAccessible(true);
+        optField.set(fresh, stubOptions("http://localhost:18999/water"));
+
+        java.lang.reflect.Method resolve = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("resolveServiceDiscoveryEndpoint");
+        resolve.setAccessible(true);
+        String endpoint = (String) resolve.invoke(fresh);
+        Assertions.assertEquals("http://localhost:18999/water/internal/serviceregistration/available", endpoint);
+    }
+
+    @Test
+    @Order(24)
+    void directImplResolveServiceDiscoveryEndpointWithTrailingSlash() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        Field optField = GatewaySystemServiceImpl.class.getDeclaredField("gatewaySystemOptions");
+        optField.setAccessible(true);
+        optField.set(fresh, stubOptions("http://localhost:18998/"));
+
+        java.lang.reflect.Method resolve = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("resolveServiceDiscoveryEndpoint");
+        resolve.setAccessible(true);
+        String endpoint = (String) resolve.invoke(fresh);
+        Assertions.assertTrue(endpoint.endsWith("/water/internal/serviceregistration/available"),
+                "Trailing slash URL must still produce valid endpoint: " + endpoint);
+    }
+
+    @Test
+    @Order(25)
+    void directImplResolveServiceDiscoveryEndpointAlreadyHasFullPath() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        String fullPath = "http://localhost:18997/water/internal/serviceregistration/available";
+        Field optField = GatewaySystemServiceImpl.class.getDeclaredField("gatewaySystemOptions");
+        optField.setAccessible(true);
+        optField.set(fresh, stubOptions(fullPath));
+
+        java.lang.reflect.Method resolve = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("resolveServiceDiscoveryEndpoint");
+        resolve.setAccessible(true);
+        String endpoint = (String) resolve.invoke(fresh);
+        Assertions.assertEquals(fullPath, endpoint, "Already-full endpoint must not be doubled");
+    }
+
+    @Test
+    @Order(26)
+    void directImplParseRemoteServiceRegistrationsHandlesNullResponse() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        java.lang.reflect.Method parse = GatewaySystemServiceImpl.class
+                .getDeclaredMethod("parseRemoteServiceRegistrations", String.class);
+        parse.setAccessible(true);
+
+        // Null JSON array -> should return empty list
+        List<?> result = (List<?>) parse.invoke(fresh, "null");
+        Assertions.assertNotNull(result);
+        Assertions.assertTrue(result.isEmpty());
+    }
+
+    @Test
+    @Order(27)
+    void directImplGetHealthyInstancesWithHalfOpenCircuit() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        // Wire circuitBreakerApi
+        Field cbField = GatewaySystemServiceImpl.class.getDeclaredField("circuitBreakerApi");
+        cbField.setAccessible(true);
+        cbField.set(fresh, circuitBreakerApi);
+        fresh.activate();
+
+        String svcName = "direct-halfopen-svc";
+        ServiceRegistration upInstance = new ServiceRegistration(svcName, "1.0", "ho-inst-1",
+                "http://localhost:19400", "http", ServiceStatus.UP);
+
+        // Inject into cache
+        Field cacheField = GatewaySystemServiceImpl.class.getDeclaredField("serviceCache");
+        cacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>> cacheRef =
+                (java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>>) cacheField.get(fresh);
+        cacheRef.get().put(svcName, new ArrayList<>(List.of(upInstance)));
+
+        // Put circuit in HALF_OPEN state: threshold=1, timeout=0 so it transitions immediately
+        it.water.infrastructure.apigateway.model.CircuitBreakerConfig cfg =
+                it.water.infrastructure.apigateway.model.CircuitBreakerConfig.builder()
+                        .serviceName(svcName).failureThreshold(1).successThreshold(5).timeoutSeconds(0).build();
+        circuitBreakerApi.configure(svcName, cfg);
+        circuitBreakerApi.recordFailure(svcName, "ho-inst-1");
+        Thread.sleep(50);
+        circuitBreakerApi.allowRequest(svcName, "ho-inst-1"); // transition to HALF_OPEN
+
+        // HALF_OPEN instances should be returned as healthy
+        List<ServiceRegistration> healthy = fresh.getHealthyInstances(svcName);
+        Assertions.assertNotNull(healthy);
+        Assertions.assertEquals(1, healthy.size(), "HALF_OPEN instance must be included in healthy list");
+        Assertions.assertEquals("ho-inst-1", healthy.get(0).getInstanceId());
+    }
+
+    @Test
+    @Order(28)
+    void directImplSyncWithServiceDiscoveryInterruptedExceptionWrapped() throws Exception {
+        GatewaySystemServiceImpl fresh = new GatewaySystemServiceImpl();
+        fresh.activate();
+
+        // Wire a ServiceRegistrationApi that interrupts the current thread and then throws
+        Field saField = GatewaySystemServiceImpl.class.getDeclaredField("serviceRegistrationApi");
+        saField.setAccessible(true);
+        ServiceRegistrationApi interruptingApi = Mockito.mock(ServiceRegistrationApi.class);
+        Mockito.when(interruptingApi.getAvailableServices()).thenAnswer(inv -> {
+            Thread.currentThread().interrupt();
+            throw new InterruptedException("simulated-interrupt");
+        });
+        saField.set(fresh, interruptingApi);
+
+        IllegalStateException ex = Assertions.assertThrows(IllegalStateException.class,
+                () -> fresh.syncWithServiceDiscovery());
+        // Clear the interrupted flag so it doesn't leak into subsequent tests
+        Thread.interrupted();
+        Assertions.assertNotNull(ex.getMessage());
+        Assertions.assertTrue(ex.getMessage().contains("interrupted") || ex.getMessage().contains("sync"),
+                "Exception message must reference the sync failure: " + ex.getMessage());
+    }
+
+    // Helper: create a minimal GatewaySystemOptions stub that returns the given discovery URL
+    private static it.water.infrastructure.apigateway.api.options.GatewaySystemOptions stubOptions(String discoveryUrl) {
+        return new it.water.infrastructure.apigateway.api.options.GatewaySystemOptions() {
+            @Override public String getServiceDiscoveryUrl() { return discoveryUrl; }
+            @Override public long getProxyTimeoutMs() { return 30000L; }
+            @Override public int getCircuitBreakerFailureThreshold() { return 5; }
+            @Override public long getCircuitBreakerTimeoutMs() { return 30000L; }
+            @Override public int getDefaultRateLimiterRequestsPerMinute() { return 0; }
+            @Override public java.util.Set<String> getTrustedProxies() { return java.util.Collections.emptySet(); }
+        };
     }
 
     private GatewaySystemServiceImpl resolveImpl() {

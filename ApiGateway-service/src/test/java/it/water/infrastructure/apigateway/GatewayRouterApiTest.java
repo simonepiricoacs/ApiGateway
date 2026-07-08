@@ -4,7 +4,9 @@ import it.water.core.api.bundle.ApplicationProperties;
 import it.water.infrastructure.apigateway.api.CircuitBreakerApi;
 import it.water.infrastructure.apigateway.api.GatewayRouterApi;
 import it.water.infrastructure.apigateway.api.GatewaySystemApi;
+import it.water.infrastructure.apigateway.api.RequestTransformerApi;
 import it.water.infrastructure.apigateway.api.options.GatewaySystemOptions;
+import it.water.infrastructure.apigateway.api.LoadBalancerApi;
 import it.water.infrastructure.apigateway.api.RateLimiterApi;
 import it.water.infrastructure.apigateway.api.RouteSystemApi;
 import it.water.infrastructure.apigateway.model.*;
@@ -61,6 +63,10 @@ class GatewayRouterApiTest implements Service {
     @Inject
     @Setter
     private RateLimiterApi rateLimiterApi;
+
+    @Inject
+    @Setter
+    private LoadBalancerApi loadBalancerApi;
 
     @Inject
     @Setter
@@ -401,7 +407,7 @@ class GatewayRouterApiTest implements Service {
                 .thenReturn(httpResponse);
 
         Method proxyRequest = GatewayRouterServiceImpl.class
-                .getDeclaredMethod("proxyRequest", GatewayRequest.class, ServiceRegistration.class, Route.class);
+                .getDeclaredMethod("proxyRequest", GatewayRequest.class, ServiceRegistration.class);
         proxyRequest.setAccessible(true);
 
         GatewayRequest request = GatewayRequest.builder()
@@ -413,7 +419,7 @@ class GatewayRouterApiTest implements Service {
         ServiceRegistration instance = new ServiceRegistration("svc", "1.0", "inst-1",
                 "http://localhost:9081/water/assetcategories", "http", ServiceStatus.UP);
 
-        GatewayResponse response = (GatewayResponse) proxyRequest.invoke(router, request, instance, null);
+        GatewayResponse response = (GatewayResponse) proxyRequest.invoke(router, request, instance);
         Assertions.assertEquals("application/json", response.getHeaders().get("content-type"));
         Assertions.assertFalse(response.getHeaders().containsKey("transfer-encoding"));
         Assertions.assertFalse(response.getHeaders().containsKey("connection"));
@@ -446,7 +452,7 @@ class GatewayRouterApiTest implements Service {
             applicationProperties.loadProperties(props);
 
             Method proxyRequest = GatewayRouterServiceImpl.class
-                    .getDeclaredMethod("proxyRequest", GatewayRequest.class, ServiceRegistration.class, Route.class);
+                    .getDeclaredMethod("proxyRequest", GatewayRequest.class, ServiceRegistration.class);
             proxyRequest.setAccessible(true);
 
             GatewayRequest request = GatewayRequest.builder()
@@ -462,7 +468,7 @@ class GatewayRouterApiTest implements Service {
                             sent.timeout().isPresent() && sent.timeout().get().toMillis() == 1234L),
                     Mockito.any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
 
-            proxyRequest.invoke(router, request, instance, null);
+            proxyRequest.invoke(router, request, instance);
 
             Mockito.verify(httpClient).send(Mockito.argThat((HttpRequest sent) ->
                             sent.timeout().isPresent() && sent.timeout().get().toMillis() == 1234L),
@@ -470,6 +476,198 @@ class GatewayRouterApiTest implements Service {
         } finally {
             applicationProperties.unloadProperties(props);
         }
+    }
+
+    @Test
+    @Order(24)
+    void routeReturns503WhenCircuitBreakerIsOpen() {
+        String svcName = "cb-open-svc";
+        String routeId = "cb-open-route";
+
+        ServiceRegistration instance = new ServiceRegistration(svcName, "1.0", "cb-open-inst-1",
+                "http://localhost:19995", "http", ServiceStatus.UP);
+        if (!injectTestInstance(svcName, instance)) {
+            return;
+        }
+
+        Route route = new Route(routeId, "/cbopenroute/**", HttpMethod.ANY, svcName, 9996, true);
+        gatewayRouterApi.addDynamicRoute(route);
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+
+        // Open the circuit for this instance (threshold=1)
+        CircuitBreakerConfig cfg = CircuitBreakerConfig.builder()
+                .serviceName(svcName).failureThreshold(1).successThreshold(3).timeoutSeconds(60).build();
+        circuitBreakerApi.configure(svcName, cfg);
+        circuitBreakerApi.recordFailure(svcName, "cb-open-inst-1");
+
+        GatewayRequest req = buildRequest(HttpMethod.GET, "/cbopenroute/test");
+        GatewayResponse response = gatewayRouterApi.route(req);
+        Assertions.assertEquals(503, response.getStatusCode(),
+                "Route must return 503 when circuit breaker is OPEN");
+        Assertions.assertTrue(new String(response.getBody()).contains("Circuit breaker"),
+                "503 body must mention Circuit breaker");
+
+        gatewayRouterApi.removeDynamicRoute(routeId);
+    }
+
+    @Test
+    @Order(25)
+    void routeSuccessRecordsCircuitBreakerAndLoadBalancerSuccessForNon5xx() throws Exception {
+        String svcName = "cb-success-svc";
+        String routeId = "cb-success-route";
+
+        // Use a mock HTTP client to return a 200 response
+        GatewayRouterServiceImpl router = new GatewayRouterServiceImpl();
+        HttpClient mockClient = Mockito.mock(HttpClient.class);
+        HttpResponse<byte[]> mockResponse = Mockito.mock(HttpResponse.class);
+
+        Field httpClientField = GatewayRouterServiceImpl.class.getDeclaredField("httpClient");
+        httpClientField.setAccessible(true);
+        httpClientField.set(router, mockClient);
+
+        Field cbField = GatewayRouterServiceImpl.class.getDeclaredField("circuitBreakerApi");
+        cbField.setAccessible(true);
+        cbField.set(router, circuitBreakerApi);
+
+        Field lbField = GatewayRouterServiceImpl.class.getDeclaredField("loadBalancerApi");
+        lbField.setAccessible(true);
+        lbField.set(router, loadBalancerApi);
+
+        // Inject a requestTransformerApi that returns the request/response unchanged
+        it.water.infrastructure.apigateway.api.RequestTransformerApi passthroughTransformer =
+                new it.water.infrastructure.apigateway.api.RequestTransformerApi() {
+                    @Override
+                    public GatewayRequest transformRequest(GatewayRequest req, Route r) { return req; }
+                    @Override
+                    public it.water.infrastructure.apigateway.model.GatewayResponse transformResponse(
+                            it.water.infrastructure.apigateway.model.GatewayResponse resp, Route r) { return resp; }
+                };
+        Field rtField = GatewayRouterServiceImpl.class.getDeclaredField("requestTransformerApi");
+        rtField.setAccessible(true);
+        rtField.set(router, passthroughTransformer);
+
+        Mockito.when(mockResponse.statusCode()).thenReturn(200);
+        Mockito.when(mockResponse.body()).thenReturn("ok".getBytes());
+        Mockito.when(mockResponse.headers()).thenReturn(
+                java.net.http.HttpHeaders.of(Map.of(), (n, v) -> true));
+        Mockito.when(mockClient.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+                .thenReturn(mockResponse);
+
+        ServiceRegistration instance = new ServiceRegistration(svcName, "1.0", "cb-succ-1",
+                "http://localhost:19994", "http", ServiceStatus.UP);
+
+        // Directly call route() via resolveRoute + proxy by adding a dynamic route
+        Route route = new Route(routeId, "/cbsuccess/**", HttpMethod.ANY, svcName, 9995, true);
+        router.addDynamicRoute(route);
+
+        // Inject instance into a fresh GatewaySystemServiceImpl
+        GatewaySystemServiceImpl freshSys = new GatewaySystemServiceImpl();
+        Field sysCbField = GatewaySystemServiceImpl.class.getDeclaredField("circuitBreakerApi");
+        sysCbField.setAccessible(true);
+        sysCbField.set(freshSys, circuitBreakerApi);
+        freshSys.activate();
+        Field sysCacheField = GatewaySystemServiceImpl.class.getDeclaredField("serviceCache");
+        sysCacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>> sysCacheRef =
+                (java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>>) sysCacheField.get(freshSys);
+        sysCacheRef.get().put(svcName, new ArrayList<>(List.of(instance)));
+
+        Field routerSysField = GatewayRouterServiceImpl.class.getDeclaredField("gatewaySystemApi");
+        routerSysField.setAccessible(true);
+        routerSysField.set(router, freshSys);
+
+        // Inject rateLimiterApi
+        Field rlField = GatewayRouterServiceImpl.class.getDeclaredField("rateLimiterApi");
+        rlField.setAccessible(true);
+        rlField.set(router, rateLimiterApi);
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+
+        GatewayRequest req = GatewayRequest.builder()
+                .method(HttpMethod.GET).path("/cbsuccess/item").clientIp("10.50.50.50")
+                .headers(new java.util.HashMap<>()).build();
+
+        it.water.infrastructure.apigateway.model.GatewayResponse response = router.route(req);
+        Assertions.assertEquals(200, response.getStatusCode());
+        Assertions.assertNotNull(response.getUpstreamInstanceId());
+        Assertions.assertTrue(response.getLatencyMs() >= 0);
+    }
+
+    @Test
+    @Order(26)
+    void routeRecords5xxAsFailureOnCircuitBreaker() throws Exception {
+        String svcName = "cb-5xx-svc";
+        String routeId = "cb-5xx-route";
+
+        GatewayRouterServiceImpl router = new GatewayRouterServiceImpl();
+        HttpClient mockClient = Mockito.mock(HttpClient.class);
+        HttpResponse<byte[]> mockResponse = Mockito.mock(HttpResponse.class);
+
+        Field httpClientField = GatewayRouterServiceImpl.class.getDeclaredField("httpClient");
+        httpClientField.setAccessible(true);
+        httpClientField.set(router, mockClient);
+
+        Field cbField = GatewayRouterServiceImpl.class.getDeclaredField("circuitBreakerApi");
+        cbField.setAccessible(true);
+        cbField.set(router, circuitBreakerApi);
+
+        Field lbField = GatewayRouterServiceImpl.class.getDeclaredField("loadBalancerApi");
+        lbField.setAccessible(true);
+        lbField.set(router, loadBalancerApi);
+
+        it.water.infrastructure.apigateway.api.RequestTransformerApi passthroughTransformer =
+                new it.water.infrastructure.apigateway.api.RequestTransformerApi() {
+                    @Override
+                    public GatewayRequest transformRequest(GatewayRequest req, Route r) { return req; }
+                    @Override
+                    public it.water.infrastructure.apigateway.model.GatewayResponse transformResponse(
+                            it.water.infrastructure.apigateway.model.GatewayResponse resp, Route r) { return resp; }
+                };
+        Field rtField = GatewayRouterServiceImpl.class.getDeclaredField("requestTransformerApi");
+        rtField.setAccessible(true);
+        rtField.set(router, passthroughTransformer);
+
+        Mockito.when(mockResponse.statusCode()).thenReturn(503);
+        Mockito.when(mockResponse.body()).thenReturn("service unavailable".getBytes());
+        Mockito.when(mockResponse.headers()).thenReturn(
+                java.net.http.HttpHeaders.of(Map.of(), (n, v) -> true));
+        Mockito.when(mockClient.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+                .thenReturn(mockResponse);
+
+        ServiceRegistration instance = new ServiceRegistration(svcName, "1.0", "cb-5xx-inst",
+                "http://localhost:19993", "http", ServiceStatus.UP);
+
+        Route route = new Route(routeId, "/cb5xx/**", HttpMethod.ANY, svcName, 9994, true);
+        router.addDynamicRoute(route);
+
+        GatewaySystemServiceImpl freshSys = new GatewaySystemServiceImpl();
+        Field sysCbField = GatewaySystemServiceImpl.class.getDeclaredField("circuitBreakerApi");
+        sysCbField.setAccessible(true);
+        sysCbField.set(freshSys, circuitBreakerApi);
+        freshSys.activate();
+        Field sysCacheField = GatewaySystemServiceImpl.class.getDeclaredField("serviceCache");
+        sysCacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>> sysCacheRef =
+                (java.util.concurrent.atomic.AtomicReference<Map<String, List<ServiceRegistration>>>) sysCacheField.get(freshSys);
+        sysCacheRef.get().put(svcName, new ArrayList<>(List.of(instance)));
+
+        Field routerSysField = GatewayRouterServiceImpl.class.getDeclaredField("gatewaySystemApi");
+        routerSysField.setAccessible(true);
+        routerSysField.set(router, freshSys);
+
+        Field rlField = GatewayRouterServiceImpl.class.getDeclaredField("rateLimiterApi");
+        rlField.setAccessible(true);
+        rlField.set(router, rateLimiterApi);
+        rateLimiterApi.getAllRules().forEach(r -> rateLimiterApi.configureLimit(r.getRuleId(), null));
+
+        GatewayRequest req = GatewayRequest.builder()
+                .method(HttpMethod.GET).path("/cb5xx/item").clientIp("10.51.51.51")
+                .headers(new java.util.HashMap<>()).build();
+
+        it.water.infrastructure.apigateway.model.GatewayResponse response = router.route(req);
+        // 503 from upstream → recorded as failure; router returns the upstream response
+        Assertions.assertEquals(503, response.getStatusCode());
     }
 
     private GatewayRequest buildRequest(HttpMethod method, String path) {

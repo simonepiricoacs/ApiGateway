@@ -33,6 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Gateway system service - handles service discovery integration and gateway management.
@@ -71,7 +72,8 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
     @Setter
     private GatewaySystemOptions gatewaySystemOptions;
 
-    private volatile Map<String, List<ServiceRegistration>> serviceCache = new ConcurrentHashMap<>();
+    private final AtomicReference<Map<String, List<ServiceRegistration>>> serviceCache =
+            new AtomicReference<>(new ConcurrentHashMap<>());
     private final Map<String, ServiceStats> statsMap = new ConcurrentHashMap<>();
     private HttpClient serviceDiscoveryHttpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -94,7 +96,7 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
         // HttpClient is not AutoCloseable on Java 17; dereferencing lets the GC
         // close its internal selector/executor threads once the component is unloaded.
         this.serviceDiscoveryHttpClient = null;
-        this.serviceCache = new ConcurrentHashMap<>();
+        this.serviceCache.set(new ConcurrentHashMap<>());
         this.statsMap.clear();
     }
 
@@ -105,8 +107,10 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
             List<ServiceRegistration> services = fetchAvailableServices();
             refreshServiceCache(services);
             log.info("Synced {} service instances from ServiceDiscovery", services.size());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ServiceDiscovery sync interrupted: " + e.getMessage(), e);
         } catch (Exception e) {
-            log.error("Failed to sync with ServiceDiscovery: {}", e.getMessage(), e);
             throw new IllegalStateException("ServiceDiscovery sync failed: " + e.getMessage(), e);
         }
     }
@@ -114,7 +118,7 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
     @Override
     public void evictServiceFromCache(String serviceName) {
         log.info("Evicting service from cache: {}", serviceName);
-        serviceCache.remove(serviceName);
+        serviceCache.get().remove(serviceName);
     }
 
     @Override
@@ -124,7 +128,7 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
 
     @Override
     public List<ServiceRegistration> getHealthyInstances(String serviceName) {
-        List<ServiceRegistration> instances = serviceCache.getOrDefault(serviceName, Collections.emptyList());
+        List<ServiceRegistration> instances = serviceCache.get().getOrDefault(serviceName, Collections.emptyList());
         List<ServiceRegistration> healthy = new ArrayList<>();
         for (ServiceRegistration reg : instances) {
             if (reg.getStatus() == ServiceStatus.UP) {
@@ -153,7 +157,7 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
     }
 
     public List<ServiceRegistration> getCachedInstances(String serviceName) {
-        return serviceCache.getOrDefault(serviceName, Collections.emptyList());
+        return serviceCache.get().getOrDefault(serviceName, Collections.emptyList());
     }
 
     private List<ServiceRegistration> fetchAvailableServices() throws IOException, InterruptedException {
@@ -197,7 +201,7 @@ public class GatewaySystemServiceImpl extends BaseEntitySystemServiceImpl<Route>
         for (ServiceRegistration reg : services) {
             refreshedCache.computeIfAbsent(reg.getServiceName(), k -> new ArrayList<>()).add(reg);
         }
-        serviceCache = refreshedCache;
+        serviceCache.set(refreshedCache);
     }
 
     private boolean hasRemoteServiceDiscoveryConfigured() {

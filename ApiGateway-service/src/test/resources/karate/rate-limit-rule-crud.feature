@@ -61,6 +61,27 @@ Feature: Check RateLimitRule Rest Api Response
     Then status 200
     And match response.results[*].id contains ruleEntityId
 
+    # --------------- UPDATE ---------------------------
+    Given header Content-Type = 'application/json'
+    And header Accept = 'application/json'
+    Given url serviceBaseUrl + '/water/api/gateway/rate-limits'
+    And request
+    """
+    {
+      "id": #(ruleEntityId),
+      "entityVersion": 1,
+      "ruleId": "#(ruleId)",
+      "keyType": "CLIENT_IP",
+      "maxRequests": 200,
+      "windowSeconds": 60,
+      "algorithm": "FIXED_WINDOW",
+      "enabled": true
+    }
+    """
+    When method PUT
+    Then status 200
+    And match response.maxRequests == 200
+
     # --------------- DELETE ---------------------------
     Given header Content-Type = 'application/json'
     And header Accept = 'application/json'

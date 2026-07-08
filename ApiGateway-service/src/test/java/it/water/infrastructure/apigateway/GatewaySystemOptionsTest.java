@@ -7,6 +7,7 @@ import it.water.core.interceptors.annotations.Inject;
 import it.water.core.testing.utils.junit.WaterTestExtension;
 import it.water.core.testing.utils.runtime.TestRuntimeUtils;
 import it.water.infrastructure.apigateway.api.options.GatewaySystemOptions;
+import it.water.infrastructure.apigateway.service.GatewaySystemOptionsImpl;
 import lombok.Setter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -249,5 +250,76 @@ class GatewaySystemOptionsTest implements Service {
         String url = gatewaySystemOptions.getServiceDiscoveryUrl();
         Assertions.assertNotNull(url,
                 "getServiceDiscoveryUrl() must return a non-null value");
+    }
+
+    // ------------------------------------------------------------------
+    // Null applicationProperties branches — direct instantiation
+    // ------------------------------------------------------------------
+
+    @Test
+    @Order(13)
+    void getServiceDiscoveryUrl_nullApplicationProperties_returnsEmptyString() {
+        GatewaySystemOptionsImpl impl = new GatewaySystemOptionsImpl();
+        // applicationProperties not set (null)
+        Assertions.assertEquals("", impl.getServiceDiscoveryUrl(),
+                "Null applicationProperties must yield empty discovery URL");
+    }
+
+    @Test
+    @Order(14)
+    void getProxyTimeoutMs_nullApplicationProperties_returnsDefault() {
+        GatewaySystemOptionsImpl impl = new GatewaySystemOptionsImpl();
+        Assertions.assertEquals(30000L, impl.getProxyTimeoutMs(),
+                "Null applicationProperties must yield 30000ms proxy timeout");
+    }
+
+    @Test
+    @Order(15)
+    void getCircuitBreakerFailureThreshold_nullApplicationProperties_returnsDefault() {
+        GatewaySystemOptionsImpl impl = new GatewaySystemOptionsImpl();
+        Assertions.assertEquals(5, impl.getCircuitBreakerFailureThreshold(),
+                "Null applicationProperties must yield default failure threshold 5");
+    }
+
+    @Test
+    @Order(16)
+    void getCircuitBreakerTimeoutMs_nullApplicationProperties_returnsDefault() {
+        GatewaySystemOptionsImpl impl = new GatewaySystemOptionsImpl();
+        Assertions.assertEquals(30000L, impl.getCircuitBreakerTimeoutMs(),
+                "Null applicationProperties must yield default CB timeout 30000ms");
+    }
+
+    @Test
+    @Order(17)
+    void getDefaultRateLimiterRequestsPerMinute_nullApplicationProperties_returnsZero() {
+        GatewaySystemOptionsImpl impl = new GatewaySystemOptionsImpl();
+        Assertions.assertEquals(0, impl.getDefaultRateLimiterRequestsPerMinute(),
+                "Null applicationProperties must yield 0 (disabled) default RPM");
+    }
+
+    @Test
+    @Order(18)
+    void getTrustedProxies_nullApplicationProperties_returnsEmptySet() {
+        GatewaySystemOptionsImpl impl = new GatewaySystemOptionsImpl();
+        Set<String> proxies = impl.getTrustedProxies();
+        Assertions.assertNotNull(proxies);
+        Assertions.assertTrue(proxies.isEmpty(),
+                "Null applicationProperties must yield empty trusted-proxies set");
+    }
+
+    @Test
+    @Order(19)
+    void getTrustedProxies_propertyWithOnlyCommas_returnsEmptySet() {
+        Properties props = new Properties();
+        props.setProperty("water.apigateway.trusted.proxies", ",,  ,");
+        try {
+            applicationProperties.loadProperties(props);
+            Set<String> proxies = gatewaySystemOptions.getTrustedProxies();
+            Assertions.assertNotNull(proxies);
+            Assertions.assertTrue(proxies.isEmpty(),
+                    "A property value containing only commas and whitespace must yield an empty set");
+        } finally {
+            applicationProperties.unloadProperties(props);
+        }
     }
 }

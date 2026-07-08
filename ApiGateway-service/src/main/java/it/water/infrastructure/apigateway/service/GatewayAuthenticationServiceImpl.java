@@ -51,7 +51,7 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
             return authenticateJwt();
         }
         if (authHeader.startsWith("Basic ")) {
-            return authenticateBasic(authHeader.substring(6));
+            return authenticateBasic();
         }
 
         return buildUnauthenticated(AuthMethod.PASSTHROUGH);
@@ -83,7 +83,7 @@ public class GatewayAuthenticationServiceImpl implements GatewayAuthenticationAp
         return buildUnauthenticated(AuthMethod.JWT_VALIDATION);
     }
 
-    private AuthResult authenticateBasic(String encoded) {
+    private AuthResult authenticateBasic() {
         //#28: Basic authentication is a reserved/unwired extension point. It MUST stay fail-closed
         //(mirroring authenticateJwt) until a real credential validator is wired in. Never authenticate
         //a request just because it carries a well-formed user:pass pair, that would be a no-credential bypass.

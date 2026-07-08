@@ -1,0 +1,1 @@
+- [ApiGateway Coverage Gaps](project_apigateway_coverage.md) — GatewaySystemServiceImpl proxy-cast issue, TokenBucket branches, null-options branches, all fixed 2026-07-03
